@@ -6,5 +6,9 @@ export const { auth: middleware } = NextAuth(authConfig);
 export default middleware;
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // /api/backup/scheduled authenticates itself via a shared-secret header
+  // (it's meant to be hit by an external cron, not a logged-in browser
+  // session) so it's excluded here rather than threaded through the
+  // session-based `authorized` callback.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/backup/scheduled).*)"],
 };
