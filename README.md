@@ -1,36 +1,162 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pharmacy Billing — Phase 1 (Core Billing MVP)
 
-## Getting Started
+A GST-compliant, keyboard-first counter-billing system for a single-tenant
+retail pharmacy. This is Phase 1 of a larger multi-phase plan — see
+[Scope](#scope--whats-not-here) for what's deliberately out of scope for now.
 
-First, run the development server:
+## Stack
+
+- **Next.js 16** (App Router, Turbopack), **React 19**, TypeScript
+- **Tailwind CSS v4** + **shadcn/ui** (Radix primitives)
+- **Zustand** for the POS cart
+- **PostgreSQL** via **Prisma 7** (driver adapter: `@prisma/adapter-pg`)
+- **NextAuth v5** (Credentials + TOTP-based MFA)
+- Docker Compose for self-hosted deployment
+
+## Getting started (local development)
+
+Requires Node 20+ and a PostgreSQL 16 instance.
 
 ```bash
+cp .env.example .env
+# edit .env: set DATABASE_URL, generate NEXTAUTH_SECRET/AUTH_SECRET and
+# BACKUP_ENCRYPTION_KEY (see the comments in .env.example for how)
+
+npm install
+npx prisma migrate deploy   # applies the existing migration
+npm run db:seed             # creates a demo tenant, branch, users, items
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000. The seed script prints demo login credentials
+(owner, pharmacist, and counter-staff accounts) and the manager PIN used for
+discount-cap overrides — re-run `npm run db:seed` any time; it's idempotent.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Owner and pharmacist accounts are required to set up TOTP MFA on first
+login (scan the QR code with any authenticator app). Counter staff MFA is
+optional — it can be turned on from Settings → Security.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Docker (self-hosted)
 
-## Learn More
+```bash
+cp .env.example .env   # fill in real secrets — do not use the example values
+docker compose up -d --build
+docker compose exec app npx prisma migrate deploy
+docker compose exec app npm run db:seed   # optional, for a demo dataset
+```
 
-To learn more about Next.js, take a look at the following resources:
+The app listens on port 3000. **TLS is expected to be terminated in front of
+this container** (a reverse proxy — nginx, Caddy, Traefik, your cloud LB) —
+the app itself does not serve HTTPS. Set `NEXTAUTH_URL` to the public HTTPS
+URL your proxy exposes.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Scheduled backups
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The "Backup now" button in Settings works regardless of any of this. For an
+unattended daily backup, point a host-level cron at the app container:
 
-## Deploy on Vercel
+```cron
+0 2 * * * curl -sf -X POST http://localhost:3000/api/backup/scheduled \
+  -H "x-backup-secret: $BACKUP_CRON_SECRET"
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+This writes an encrypted export to the `backups/` volume (already declared
+in `docker-compose.yml`) and logs the attempt the same way a manual backup
+does — it'll show up in Settings and count toward the 48h staleness check on
+the dashboard.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Restoring a backup
+
+Backup files are AES-256-GCM encrypted (`[12-byte IV][16-byte auth tag][ciphertext]`,
+base64-encoded when downloaded from the browser). Decrypt with the same
+`BACKUP_ENCRYPTION_KEY` used to create them:
+
+```js
+import { readFileSync } from "node:fs";
+import crypto from "node:crypto";
+
+const key = Buffer.from(process.env.BACKUP_ENCRYPTION_KEY, "hex"); // or base64
+const payload = readFileSync("pharmacy-backup-....enc");
+const iv = payload.subarray(0, 12);
+const authTag = payload.subarray(12, 28);
+const ciphertext = payload.subarray(28);
+const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+decipher.setAuthTag(authTag);
+const json = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+```
+
+The decrypted JSON contains the tenant's branches, items, batches,
+customers, doctors, and invoices (with line items and discounts) as of the
+export time. Restoring it back into the database isn't automated in Phase
+1 — the export exists so the data is recoverable, not as a one-click
+restore flow yet.
+
+## Security notes
+
+- **TLS**: assumed to be terminated at the reverse proxy / load balancer in
+  front of this app (see Docker section above). No app-level TLS handling.
+- **Passwords**: hashed with bcrypt, never stored or logged in plaintext.
+- **MFA**: TOTP secrets are stored in the database, never logged. Required
+  for owner/pharmacist roles; optional for counter staff.
+- **RBAC**: enforced server-side in every mutation (`requireRole()` /
+  `requireSession()` in `src/lib/rbac.ts`), not just hidden in the UI —
+  a counter-staff account calling an owner-only server action directly gets
+  rejected regardless of what the client renders.
+- **Audit log**: every price edit, stock adjustment, discount override,
+  item import, and sale completion writes an `AuditLog` row with
+  before/after values where applicable.
+- **SQL injection**: all data access goes through Prisma's parameterized
+  queries; there is no raw SQL in the application code.
+- **Backups**: encrypted at rest (AES-256-GCM) before being written to disk
+  or sent to the browser — see [Restoring a backup](#restoring-a-backup).
+- **Session idle timeout**: configurable via `SESSION_IDLE_TIMEOUT_MINUTES`
+  (default 15). Implemented as a sliding JWT expiry, not a hard
+  server-tracked session store — acceptable for Phase 1's single-tenant
+  scale, but worth knowing if you're auditing this.
+- **Self-hosted auth trust**: `trustHost: true` is set in
+  `src/auth.config.ts` because this app only ships as self-hosted Docker,
+  never Vercel. This is safe *because* TLS termination and host validation
+  are the reverse proxy's job — don't expose the app container directly to
+  the internet without one.
+
+## Scope / what's not here
+
+This is Phase 1 only. Deliberately out of scope (see the original build
+spec for the full list): multi-tenant signup/billing, purchase
+orders/GRN/supplier ledger, GST return filing (GSTR-1/3B) and e-invoicing,
+multi-branch transfers, scheme/loyalty discounts, cloud backup, Marg/Vyapar
+importers, Hospital Mode, white-labeling beyond the basic
+logo/color/footer fields, AI features, real payment gateway integration,
+and SMS/WhatsApp notifications. The CSV import pipeline
+(`src/lib/import/`) is structured in independent stages — parse → map →
+validate → commit — specifically so a platform-specific pre-parser could
+be dropped in ahead of `validate`/`commit` in a later phase without
+touching those two stages.
+
+## Scripts
+
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Start the dev server (Turbopack) |
+| `npm run build` | Production build |
+| `npm run start` | Run a production build (`next start`) |
+| `npm run lint` | ESLint (flat config, `eslint.config.mjs`) |
+| `npm run db:seed` | Seed demo tenant/branch/users/items (idempotent) |
+| `npx prisma studio` | Browse the database |
+| `npx prisma migrate dev` | Create/apply a migration in development |
+
+## Project structure
+
+```
+prisma/schema.prisma       Database schema (every table carries tenantId)
+prisma.config.ts           Prisma 7 config (datasource URL, migrations path)
+src/auth.ts, auth.config.ts  NextAuth v5 setup (auth.config.ts is Edge-safe,
+                              used by src/proxy.ts; auth.ts adds the
+                              Credentials provider + Prisma/bcrypt)
+src/lib/actions/           Server actions (one file per feature area)
+src/lib/billing.ts         Shared GST/discount math (client + server)
+src/lib/serialize.ts       Decimal -> number conversion for RSC boundaries
+src/components/pos/        The POS billing screen
+src/components/receipt/    Thermal (58/80mm) + A4 receipt renderer
+src/lib/import/            CSV import pipeline (parse/map/validate stages)
+```
