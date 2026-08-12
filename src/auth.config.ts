@@ -36,6 +36,17 @@ export const authConfig = {
       }
       return true;
     },
+    // Pure (no DB/bcrypt) so it's safe to run on the Edge in middleware too.
+    // Copies the custom JWT claims set in src/auth.ts's `jwt` callback onto
+    // `session.user` — without this, middleware can't see role/tenantId/
+    // mfaSetupRequired and the `authorized` callback above would misfire.
+    async session({ session, token }) {
+      session.user.id = token.id as string;
+      session.user.tenantId = token.tenantId as string;
+      session.user.role = token.role;
+      session.user.mfaSetupRequired = token.mfaSetupRequired as boolean;
+      return session;
+    },
   },
   providers: [],
 } satisfies NextAuthConfig;

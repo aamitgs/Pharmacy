@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { authConfig } from "@/auth.config";
@@ -6,6 +6,15 @@ import { prisma } from "@/lib/prisma";
 import { verifyTotpCode } from "@/lib/totp";
 
 const MFA_REQUIRED_ROLES = ["owner", "pharmacist"] as const;
+
+// signIn() with redirect:false surfaces this as `code`, not `error` (which
+// stays the fixed "CredentialsSignin" string) — see @auth/core/errors.js.
+class MfaRequiredError extends CredentialsSignin {
+  code = "MFA_REQUIRED";
+}
+class InvalidTotpError extends CredentialsSignin {
+  code = "INVALID_TOTP";
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
@@ -33,11 +42,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         if (user.totpEnabled && user.totpSecret) {
           if (!totpCode) {
-            throw new Error("MFA_REQUIRED");
+            throw new MfaRequiredError();
           }
           const codeValid = verifyTotpCode(user.totpSecret, totpCode);
           if (!codeValid) {
-            throw new Error("INVALID_TOTP");
+            throw new InvalidTotpError();
           }
         }
 
@@ -75,13 +84,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
       }
       return token;
-    },
-    async session({ session, token }) {
-      session.user.id = token.id as string;
-      session.user.tenantId = token.tenantId as string;
-      session.user.role = token.role;
-      session.user.mfaSetupRequired = token.mfaSetupRequired as boolean;
-      return session;
     },
   },
 });
