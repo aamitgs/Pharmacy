@@ -1,4 +1,4 @@
-import type { Item, Batch } from "@prisma/client";
+import type { Item, Batch } from "@/generated/prisma/client";
 
 // Prisma's Decimal is a class instance, not a plain object — it doesn't
 // survive the React Server Component serialization boundary (props passed

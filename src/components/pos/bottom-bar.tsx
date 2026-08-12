@@ -13,7 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { BillingResult } from "@/lib/billing";
 import type { PosCustomer } from "./types";
-import type { PaymentMode } from "@prisma/client";
+import type { PaymentMode } from "@/generated/prisma/client";
 import { Loader2 } from "lucide-react";
 
 const PAYMENT_MODES: { value: PaymentMode; label: string }[] = [

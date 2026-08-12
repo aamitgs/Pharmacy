@@ -1,9 +1,9 @@
 import NextAuth from "next-auth";
 import { authConfig } from "@/auth.config";
 
-export const { auth: middleware } = NextAuth(authConfig);
+export const { auth: proxy } = NextAuth(authConfig);
 
-export default middleware;
+export default proxy;
 
 export const config = {
   // /api/backup/scheduled authenticates itself via a shared-secret header

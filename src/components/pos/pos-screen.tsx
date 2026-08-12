@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import type { UserRole } from "@prisma/client";
+import type { UserRole } from "@/generated/prisma/client";
 import { useCartStore } from "@/store/cart-store";
 import { computeBilling, effectiveDiscountPercent, type BillingLineInput } from "@/lib/billing";
 import { completeSale, verifyManagerPin } from "@/lib/actions/pos";

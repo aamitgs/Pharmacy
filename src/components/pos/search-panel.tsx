@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,7 @@ export function SearchPanel({
 }: {
   items: PosItem[];
   onSelect: (item: PosItem) => void;
-  inputRef: React.RefObject<HTMLInputElement>;
+  inputRef: React.RefObject<HTMLInputElement | null>;
 }) {
   const [query, setQuery] = useState("");
   const [highlighted, setHighlighted] = useState(0);
@@ -43,9 +43,13 @@ export function SearchPanel({
       .slice(0, 12);
   }, [items, query]);
 
-  useEffect(() => {
+  // Reset the highlighted result whenever the query changes. Adjusting
+  // state during render (rather than in an effect) avoids an extra commit.
+  const [prevQuery, setPrevQuery] = useState(query);
+  if (query !== prevQuery) {
+    setPrevQuery(query);
     setHighlighted(0);
-  }, [query]);
+  }
 
   function selectItem(item: PosItem) {
     onSelect(item);

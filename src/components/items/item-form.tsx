@@ -32,13 +32,19 @@ const formSchema = z.object({
   reorderLevel: z.coerce.number().int().min(0),
 });
 
-type FormValues = z.infer<typeof formSchema>;
+// zod v4 gives coerce.number() an `unknown` input type distinct from its
+// `number` output type, so the form's field type (pre-coercion, used by
+// defaultValues/register) and the resolver's transformed output type
+// (post-coercion, used by onSubmit) have to be threaded through separately —
+// see react-hook-form's 3rd useForm generic (TTransformedValues).
+type FormValues = z.input<typeof formSchema>;
+type FormOutput = z.output<typeof formSchema>;
 
 export function ItemForm({ item }: { item?: PlainItem }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  const form = useForm<FormValues>({
+  const form = useForm<FormValues, unknown, FormOutput>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: item?.name ?? "",
@@ -54,7 +60,7 @@ export function ItemForm({ item }: { item?: PlainItem }) {
     },
   });
 
-  function onSubmit(values: FormValues) {
+  function onSubmit(values: FormOutput) {
     startTransition(async () => {
       try {
         if (item) {

@@ -31,7 +31,9 @@ const formSchema = z.object({
   rackLocation: z.string().trim().optional(),
 });
 
-type FormValues = z.infer<typeof formSchema>;
+// See item-form.tsx for why input/output types are split (zod v4 coerce).
+type FormValues = z.input<typeof formSchema>;
+type FormOutput = z.output<typeof formSchema>;
 
 function toDateInput(d: Date | null | undefined) {
   if (!d) return "";
@@ -51,7 +53,7 @@ export function BatchForm({
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  const form = useForm<FormValues>({
+  const form = useForm<FormValues, unknown, FormOutput>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       batchNo: batch?.batchNo ?? "",
@@ -65,7 +67,7 @@ export function BatchForm({
     },
   });
 
-  function onSubmit(values: FormValues) {
+  function onSubmit(values: FormOutput) {
     startTransition(async () => {
       try {
         const input: BatchInput = { ...values, itemId };

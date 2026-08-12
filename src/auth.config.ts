@@ -6,6 +6,15 @@ import type { NextAuthConfig } from "next-auth";
  * The real Credentials provider (with DB access) lives in `src/auth.ts`.
  */
 export const authConfig = {
+  // Required for self-hosted deployments (this app only ships as
+  // self-hosted Docker, never Vercel): Auth.js only trusts the incoming
+  // Host header automatically when it can detect a Vercel deployment.
+  // Everywhere else — including `next start` in this repo's own Docker
+  // image — auth silently 500s on every request without this, which only
+  // shows up in production/standalone mode, never in `next dev`. The
+  // operator is expected to terminate TLS and set NEXTAUTH_URL correctly
+  // in front of this (see README).
+  trustHost: true,
   pages: {
     signIn: "/login",
   },

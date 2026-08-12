@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ScheduleClass, PaymentMode } from "@prisma/client";
+import type { ScheduleClass, PaymentMode } from "@/generated/prisma/client";
 
 export interface CartLine {
   lineId: string;

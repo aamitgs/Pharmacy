@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -27,10 +27,13 @@ export function ManagerPinDialog({
   reason: string;
 }) {
   const [pin, setPin] = useState("");
-
-  useEffect(() => {
+  // Reset the field when the dialog transitions closed -> open. Adjusting
+  // state during render (rather than in an effect) avoids an extra commit.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (open) setPin("");
-  }, [open]);
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

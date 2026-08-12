@@ -62,6 +62,8 @@ export function LoginForm() {
         return;
       }
 
+      // Full reload, not router.push: avoids a stale-session-cookie race
+      // against a client-side RSC navigation right after sign-in.
       window.location.assign(callbackUrl);
     } finally {
       setLoading(false);

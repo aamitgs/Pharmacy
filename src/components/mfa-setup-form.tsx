@@ -43,6 +43,11 @@ export function MfaSetupForm({ onDone }: { onDone?: () => void }) {
       await update({ trigger: "update" } as never);
       setTimeout(() => {
         if (onDone) onDone();
+        // Full reload, not router.push: the session cookie just changed
+        // (mfaSetupRequired flipped) and a client-side navigation can race
+        // ahead of that on a stale RSC cache — see login-form.tsx for the
+        // same pattern and the bug this avoids.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
         else window.location.assign("/dashboard");
       }, 900);
     });
