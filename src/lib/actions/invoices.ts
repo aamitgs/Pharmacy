@@ -74,3 +74,23 @@ export async function getInvoiceForReceipt(id: string) {
 }
 
 export type ReceiptData = NonNullable<Awaited<ReturnType<typeof getInvoiceForReceipt>>>;
+
+export async function listInvoices() {
+  const session = await requireSession();
+  const invoices = await prisma.salesInvoice.findMany({
+    where: { tenantId: session.user.tenantId },
+    include: { customer: true },
+    orderBy: { invoiceDate: "desc" },
+    take: 200,
+  });
+
+  return invoices.map((inv) => ({
+    id: inv.id,
+    invoiceNo: inv.invoiceNo,
+    invoiceDate: inv.invoiceDate,
+    customerName: inv.customer?.name ?? "Walk-in",
+    paymentMode: inv.paymentMode,
+    status: inv.status,
+    total: Number(inv.total),
+  }));
+}

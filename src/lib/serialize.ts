@@ -1,4 +1,4 @@
-import type { Item, Batch } from "@/generated/prisma/client";
+import type { Item, Batch, Customer } from "@/generated/prisma/client";
 
 // Prisma's Decimal is a class instance, not a plain object — it doesn't
 // survive the React Server Component serialization boundary (props passed
@@ -23,5 +23,18 @@ export function serializeBatch(batch: Batch): PlainBatch {
     mrp: Number(batch.mrp),
     purchaseRate: Number(batch.purchaseRate),
     saleRate: Number(batch.saleRate),
+  };
+}
+
+export type PlainCustomer = Omit<Customer, "creditLimit" | "outstandingBalance"> & {
+  creditLimit: number | null;
+  outstandingBalance: number;
+};
+
+export function serializeCustomer(customer: Customer): PlainCustomer {
+  return {
+    ...customer,
+    creditLimit: customer.creditLimit ? Number(customer.creditLimit) : null,
+    outstandingBalance: Number(customer.outstandingBalance),
   };
 }
