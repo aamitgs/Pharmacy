@@ -45,7 +45,7 @@ export function AppShell({
 
   return (
     <div className="flex min-h-screen">
-      <aside className="flex w-56 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
+      <aside className="flex w-56 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground print:hidden">
         <div className="flex h-12 items-center border-b px-4">
           <span className="truncate text-sm font-semibold">{user.pharmacyName}</span>
         </div>
@@ -79,7 +79,7 @@ export function AppShell({
           </SignOutButton>
         </div>
       </aside>
-      <main className="flex-1 overflow-x-hidden bg-background">{children}</main>
+      <main className="flex-1 overflow-x-hidden bg-background print:w-full">{children}</main>
     </div>
   );
 }
