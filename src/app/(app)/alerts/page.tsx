@@ -9,7 +9,8 @@ import { FilePlus2, TriangleAlert } from "lucide-react";
 
 export default async function AlertsPage() {
   const session = await auth();
-  const { lowStock, nearExpiry, nearExpiryWindowDays } = await getAlerts();
+  const { lowStock, nearExpiry, nearExpiryWindowDays, licenseExpiry, licenseExpiryWindowDays } =
+    await getAlerts();
   const canEdit = session?.user.role === "owner" || session?.user.role === "pharmacist";
 
   return (
@@ -19,6 +20,73 @@ export default async function AlertsPage() {
         <p className="text-sm text-muted-foreground">
           Live stock issues that need attention — act on them directly from here.
         </p>
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-sm font-medium">
+          License renewals{" "}
+          <span className="text-muted-foreground">
+            ({licenseExpiry.length}) — within {licenseExpiryWindowDays} days
+          </span>
+        </h2>
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>License</TableHead>
+                <TableHead>Branch</TableHead>
+                <TableHead>License no.</TableHead>
+                <TableHead>Expiry</TableHead>
+                <TableHead>Status</TableHead>
+                {canEdit && <TableHead className="w-32" />}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {licenseExpiry.length ? (
+                licenseExpiry.map((row) => (
+                  <TableRow key={`${row.branchId}-${row.licenseType}`}>
+                    <TableCell className="font-medium">{row.label}</TableCell>
+                    <TableCell>{row.branchName}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {row.licenseNo || "—"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm">
+                      {format(row.expiryDate, "dd MMM yyyy")}
+                    </TableCell>
+                    <TableCell>
+                      {row.severity === "expired" ? (
+                        <Badge className="gap-1 bg-destructive/10 text-destructive hover:bg-destructive/10">
+                          <TriangleAlert className="h-3 w-3" /> Expired
+                        </Badge>
+                      ) : row.severity === "urgent" ? (
+                        <Badge className="gap-1 bg-destructive/10 text-destructive hover:bg-destructive/10">
+                          <TriangleAlert className="h-3 w-3" /> {row.daysRemaining}d left
+                        </Badge>
+                      ) : (
+                        <Badge className="gap-1 bg-warning/20 text-warning-foreground hover:bg-warning/20">
+                          <TriangleAlert className="h-3 w-3" /> {row.daysRemaining}d left
+                        </Badge>
+                      )}
+                    </TableCell>
+                    {canEdit && (
+                      <TableCell>
+                        <Button asChild size="sm" variant="outline">
+                          <Link href="/settings">Update</Link>
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={canEdit ? 6 : 5} className="h-20 text-center text-muted-foreground">
+                    No license renewals due within the window.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
       <div className="space-y-3">

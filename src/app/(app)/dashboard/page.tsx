@@ -32,6 +32,31 @@ export default async function DashboardPage() {
         </Alert>
       )}
 
+      {data.licenseExpiryCount > 0 && data.licenseExpirySoonest && (
+        <Alert
+          variant={data.licenseExpirySoonest.severity === "upcoming" ? "default" : "destructive"}
+        >
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>
+            {data.licenseExpiryCount === 1
+              ? "License renewal due"
+              : `${data.licenseExpiryCount} license renewals due`}
+          </AlertTitle>
+          <AlertDescription>
+            {data.licenseExpirySoonest.label} ({data.licenseExpirySoonest.branchName}){" "}
+            {data.licenseExpirySoonest.severity === "expired"
+              ? "has expired."
+              : `expires in ${data.licenseExpirySoonest.daysRemaining} day${
+                  data.licenseExpirySoonest.daysRemaining === 1 ? "" : "s"
+                }.`}{" "}
+            <Link href="/alerts" className="underline underline-offset-2">
+              Review
+            </Link>
+            .
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="grid grid-cols-5 gap-4">
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">

@@ -28,3 +28,4 @@ export const canViewPurchaseRate = (role: UserRole) => role === "owner" || role 
 export const canEditItemMaster = (role: UserRole) => role === "owner" || role === "pharmacist";
 export const canManageUsers = (role: UserRole) => role === "owner";
 export const canCancelInvoice = (role: UserRole) => role === "owner" || role === "pharmacist";
+export const canManageCompliance = (role: UserRole) => role === "owner" || role === "pharmacist";

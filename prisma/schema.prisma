@@ -26,6 +26,10 @@ model Tenant {
   staffDiscountCapPercent Decimal  @default(10) @db.Decimal(5, 2)
   managerPinHash          String?
   nearExpiryWindowDays    Int      @default(90)
+  // Separate from nearExpiryWindowDays (batch stock expiry) — licence
+  // renewal lead time is a different business concern with its own
+  // sensible default.
+  licenseExpiryWindowDays Int      @default(60)
   createdAt               DateTime @default(now())
 
   branches      Branch[]

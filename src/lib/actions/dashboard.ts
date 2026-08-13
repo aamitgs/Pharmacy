@@ -32,5 +32,7 @@ export async function getDashboardData() {
     supplierOutstandingTotal: Number(supplierOutstanding._sum.amount ?? 0),
     backupStatus,
     pharmacyName: tenant.pharmacyName,
+    licenseExpiryCount: alerts.licenseExpiry.length,
+    licenseExpirySoonest: alerts.licenseExpiry[0] ?? null,
   };
 }

@@ -2,18 +2,34 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/rbac";
+import { LICENSE_TYPES, type LicenseType } from "@/lib/license-types";
+
+const LICENSE_LABELS: Record<LicenseType, string> = {
+  retail: "Retail drug license",
+  wholesale: "Wholesale drug license",
+  narcotic: "Narcotic license",
+  fssai: "FSSAI registration",
+};
+
+const LICENSE_NUMBER_FIELD: Record<LicenseType, "drugLicenseRetailNo" | "drugLicenseWholesaleNo" | "narcoticLicenseNo" | "fssaiNo"> = {
+  retail: "drugLicenseRetailNo",
+  wholesale: "drugLicenseWholesaleNo",
+  narcotic: "narcoticLicenseNo",
+  fssai: "fssaiNo",
+};
 
 export async function getAlerts() {
   const session = await requireSession();
   const tenantId = session.user.tenantId;
 
-  const [items, tenant] = await Promise.all([
+  const [items, tenant, branches] = await Promise.all([
     prisma.item.findMany({
       where: { tenantId },
       include: { batches: true },
       orderBy: { name: "asc" },
     }),
     prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } }),
+    prisma.branch.findMany({ where: { tenantId } }),
   ]);
 
   const now = new Date();
@@ -81,5 +97,44 @@ export async function getAlerts() {
   }
   nearExpiry.sort((a, b) => a.expiryDate.getTime() - b.expiryDate.getTime());
 
-  return { lowStock, nearExpiry, nearExpiryWindowDays: tenant.nearExpiryWindowDays };
+  const licenseExpiryCutoff = new Date(now.getTime() + tenant.licenseExpiryWindowDays * 86400000);
+  const licenseExpiry: {
+    branchId: string;
+    branchName: string;
+    licenseType: LicenseType;
+    label: string;
+    licenseNo: string | null;
+    expiryDate: Date;
+    daysRemaining: number;
+    severity: "expired" | "urgent" | "upcoming";
+  }[] = [];
+  for (const branch of branches) {
+    const dates = (branch.licenseExpiryDates ?? {}) as Partial<Record<LicenseType, string>>;
+    for (const type of LICENSE_TYPES) {
+      const raw = dates[type];
+      if (!raw) continue;
+      const expiryDate = new Date(raw);
+      if (Number.isNaN(expiryDate.getTime()) || expiryDate > licenseExpiryCutoff) continue;
+      const daysRemaining = Math.ceil((expiryDate.getTime() - now.getTime()) / 86400000);
+      licenseExpiry.push({
+        branchId: branch.id,
+        branchName: branch.name,
+        licenseType: type,
+        label: LICENSE_LABELS[type],
+        licenseNo: branch[LICENSE_NUMBER_FIELD[type]],
+        expiryDate,
+        daysRemaining,
+        severity: daysRemaining < 0 ? "expired" : daysRemaining <= 15 ? "urgent" : "upcoming",
+      });
+    }
+  }
+  licenseExpiry.sort((a, b) => a.expiryDate.getTime() - b.expiryDate.getTime());
+
+  return {
+    lowStock,
+    nearExpiry,
+    nearExpiryWindowDays: tenant.nearExpiryWindowDays,
+    licenseExpiry,
+    licenseExpiryWindowDays: tenant.licenseExpiryWindowDays,
+  };
 }
