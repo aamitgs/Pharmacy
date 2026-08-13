@@ -23,6 +23,9 @@ import {
   Building2,
   ArrowLeftRight,
   Settings,
+  Percent,
+  Award,
+  Ticket,
 } from "lucide-react";
 
 type NavItem = {
@@ -51,6 +54,24 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/doctors", label: "Doctors", icon: Stethoscope },
   { href: "/invoices", label: "Invoices", icon: Receipt },
+  {
+    href: "/schemes",
+    label: "Schemes",
+    icon: Percent,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/loyalty-tiers",
+    label: "Loyalty Tiers",
+    icon: Award,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/coupons",
+    label: "Coupons",
+    icon: Ticket,
+    roles: ["owner", "pharmacist"],
+  },
   {
     href: "/reports/sales-register",
     label: "Sales Register",

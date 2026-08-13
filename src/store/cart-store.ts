@@ -23,6 +23,12 @@ interface RemovedLine {
   index: number;
 }
 
+export interface AppliedCoupon {
+  code: string;
+  type: "percent" | "flat";
+  value: number;
+}
+
 interface CartState {
   lines: CartLine[];
   billDiscount: { isPercent: boolean; value: number };
@@ -34,6 +40,7 @@ interface CartState {
   prescriptionImagePath: string | null;
   lastRemoved: RemovedLine | null;
   focusLineId: string | null;
+  appliedCoupon: AppliedCoupon | null;
 
   addLine: (line: Omit<CartLine, "lineId" | "qty" | "discountPercent">) => string;
   updateQty: (lineId: string, qty: number) => void;
@@ -52,6 +59,7 @@ interface CartState {
   setPatientAge: (v: string) => void;
   setPaymentMode: (mode: PaymentMode) => void;
   setPrescriptionImagePath: (path: string | null) => void;
+  setAppliedCoupon: (coupon: AppliedCoupon | null) => void;
   reset: () => void;
 }
 
@@ -72,6 +80,7 @@ const initialState = {
   prescriptionImagePath: null as string | null,
   lastRemoved: null as RemovedLine | null,
   focusLineId: null as string | null,
+  appliedCoupon: null as AppliedCoupon | null,
 };
 
 export const useCartStore = create<CartState>((set, get) => ({
@@ -162,6 +171,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   setPatientAge: (v) => set({ patientAge: v }),
   setPaymentMode: (mode) => set({ paymentMode: mode }),
   setPrescriptionImagePath: (path) => set({ prescriptionImagePath: path }),
+  setAppliedCoupon: (coupon) => set({ appliedCoupon: coupon }),
 
   reset: () => set({ ...initialState, lines: [] }),
 }));

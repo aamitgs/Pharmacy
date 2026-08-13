@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { CartLine } from "@/store/cart-store";
+import type { SchemeApplication } from "@/lib/scheme-engine";
 import type { PosItem } from "./types";
 
 export function CartTable({
@@ -20,6 +21,7 @@ export function CartTable({
   onDiscountChange,
   onOverrideBatch,
   onRemove,
+  schemeByLineId,
 }: {
   lines: CartLine[];
   catalogByItemId: Map<string, PosItem>;
@@ -30,6 +32,7 @@ export function CartTable({
   onDiscountChange: (lineId: string, percent: number) => void;
   onOverrideBatch: (lineId: string, batchId: string) => void;
   onRemove: (lineId: string) => void;
+  schemeByLineId: Map<string, SchemeApplication>;
 }) {
   const qtyRefs = useRef<Map<string, HTMLInputElement>>(new Map());
 
@@ -86,6 +89,11 @@ export function CartTable({
                   {line.scheduleClass !== "none" && (
                     <Badge variant="outline" className="mt-0.5 text-[10px]">
                       Schedule {line.scheduleClass}
+                    </Badge>
+                  )}
+                  {schemeByLineId.get(line.lineId) && (
+                    <Badge className="mt-0.5 block w-fit bg-success/15 text-[10px] text-success hover:bg-success/15">
+                      {schemeByLineId.get(line.lineId)!.reason}
                     </Badge>
                   )}
                 </td>

@@ -12,6 +12,7 @@ export default async function PosPage() {
       branchId={data.branchId}
       staffDiscountCapPercent={data.staffDiscountCapPercent}
       role={data.role}
+      schemes={data.schemes}
     />
   );
 }

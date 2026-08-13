@@ -12,9 +12,10 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { BillingResult } from "@/lib/billing";
+import type { AppliedCoupon } from "@/store/cart-store";
 import type { PosCustomer } from "./types";
 import type { PaymentMode } from "@/generated/prisma/client";
-import { Loader2 } from "lucide-react";
+import { Loader2, Tag, X } from "lucide-react";
 
 const PAYMENT_MODES: { value: PaymentMode; label: string }[] = [
   { value: "cash", label: "Cash" },
@@ -36,6 +37,13 @@ export function BottomBar({
   onCompleteSale,
   submitting,
   blockedReason,
+  appliedCoupon,
+  couponInput,
+  onCouponInputChange,
+  onApplyCoupon,
+  onRemoveCoupon,
+  couponError,
+  couponChecking,
 }: {
   billing: BillingResult;
   billDiscountValue: number;
@@ -49,9 +57,18 @@ export function BottomBar({
   onCompleteSale: () => void;
   submitting: boolean;
   blockedReason: string | null;
+  appliedCoupon: AppliedCoupon | null;
+  couponInput: string;
+  onCouponInputChange: (v: string) => void;
+  onApplyCoupon: () => void;
+  onRemoveCoupon: () => void;
+  couponError: string | null;
+  couponChecking: boolean;
 }) {
   const selectedCustomer = customers.find((c) => c.id === customerId);
   const creditEligible = !!selectedCustomer && selectedCustomer.creditLimit !== null;
+  const loyaltyDiscount = billing.billDiscounts.find((d) => d.type === "loyalty");
+  const couponDiscount = billing.billDiscounts.find((d) => d.type === "coupon");
 
   return (
     <div className="sticky bottom-0 z-30 border-t bg-card shadow-[0_-2px_8px_rgba(0,0,0,0.04)]">
@@ -75,6 +92,11 @@ export function BottomBar({
                 ))}
               </SelectContent>
             </Select>
+            {selectedCustomer?.loyaltyTierName && (
+              <p className="text-[11px] text-success">
+                {selectedCustomer.loyaltyTierName} tier — {selectedCustomer.loyaltyDiscountPercent}% loyalty discount
+              </p>
+            )}
           </div>
 
           <div className="space-y-1">
@@ -123,6 +145,39 @@ export function BottomBar({
               })}
             </div>
           </div>
+
+          <div className="col-span-4 space-y-1">
+            <Label className="text-xs">Coupon code</Label>
+            {appliedCoupon ? (
+              <div className="flex h-8 items-center justify-between rounded-md border bg-success/10 px-2 text-xs">
+                <span className="flex items-center gap-1 text-success">
+                  <Tag className="h-3 w-3" /> {appliedCoupon.code} applied
+                </span>
+                <button type="button" onClick={onRemoveCoupon} aria-label="Remove coupon">
+                  <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-1">
+                <Input
+                  className="h-8 uppercase"
+                  placeholder="Enter code"
+                  value={couponInput}
+                  onChange={(e) => onCouponInputChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      onApplyCoupon();
+                    }
+                  }}
+                />
+                <Button type="button" size="sm" className="h-8" onClick={onApplyCoupon} disabled={couponChecking}>
+                  Apply
+                </Button>
+              </div>
+            )}
+            {couponError && <p className="text-[11px] text-destructive">{couponError}</p>}
+          </div>
         </div>
 
         <div className="flex items-center gap-4">
@@ -136,6 +191,18 @@ export function BottomBar({
                 −₹{billing.discountAmount.toFixed(2)}
               </span>
             </div>
+            {loyaltyDiscount && loyaltyDiscount.amount > 0 && (
+              <div>
+                &nbsp;&nbsp;· Loyalty{" "}
+                <span className="tabular-nums text-success">−₹{loyaltyDiscount.amount.toFixed(2)}</span>
+              </div>
+            )}
+            {couponDiscount && couponDiscount.amount > 0 && (
+              <div>
+                &nbsp;&nbsp;· Coupon{" "}
+                <span className="tabular-nums text-success">−₹{couponDiscount.amount.toFixed(2)}</span>
+              </div>
+            )}
             <div>
               Tax (CGST+SGST) <span className="tabular-nums">₹{billing.taxAmount.toFixed(2)}</span>
             </div>

@@ -51,6 +51,10 @@ model Tenant {
 
   narcoticRegisterEntries NarcoticRegisterEntry[]
 
+  schemes      Scheme[]
+  loyaltyTiers LoyaltyTier[]
+  coupons      Coupon[]
+
   @@map("tenants")
 }
 
@@ -178,14 +182,87 @@ model Customer {
   phone              String?
   creditLimit        Decimal? @db.Decimal(10, 2)
   outstandingBalance Decimal  @default(0) @db.Decimal(10, 2)
+  // Loyalty tier is computed/reassigned automatically whenever
+  // cumulativeSpend crosses a tier threshold (see resolveLoyaltyTier in
+  // src/lib/actions/pos.ts) — never set directly through a form.
+  loyaltyTierId      String?
+  cumulativeSpend    Decimal  @default(0) @db.Decimal(12, 2)
   createdAt          DateTime @default(now())
 
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  loyaltyTier   LoyaltyTier?   @relation(fields: [loyaltyTierId], references: [id])
   salesInvoices SalesInvoice[]
 
   @@index([tenantId])
   @@index([tenantId, phone])
+  @@index([loyaltyTierId])
   @@map("customers")
+}
+
+enum SchemeType {
+  percent_off
+  buy_x_get_y
+}
+
+// config jsonb holds type-specific rules:
+//   percent_off  -> { percent: number, applicableItemIds?: string[] }
+//   buy_x_get_y  -> { buyQty: number, getQty: number, applicableItemIds: string[] }
+// An empty/omitted applicableItemIds on percent_off means "all items".
+model Scheme {
+  id        String     @id @default(cuid())
+  tenantId  String
+  name      String
+  type      SchemeType
+  config    Json
+  validFrom DateTime
+  validTo   DateTime
+  active    Boolean    @default(true)
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  discounts Discount[]
+
+  @@index([tenantId])
+  @@index([tenantId, active])
+  @@map("schemes")
+}
+
+model LoyaltyTier {
+  id                 String  @id @default(cuid())
+  tenantId           String
+  name               String
+  minCumulativeSpend Decimal @db.Decimal(12, 2)
+  discountPercent    Decimal @db.Decimal(5, 2)
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customers Customer[]
+
+  @@index([tenantId])
+  @@map("loyalty_tiers")
+}
+
+enum CouponType {
+  percent
+  flat
+}
+
+model Coupon {
+  id                   String     @id @default(cuid())
+  tenantId             String
+  code                 String
+  type                 CouponType
+  value                Decimal    @db.Decimal(10, 2)
+  validFrom            DateTime
+  validTo              DateTime
+  usageLimit           Int?
+  usageCount           Int        @default(0)
+  singleUsePerCustomer Boolean    @default(false)
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  discounts Discount[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("coupons")
 }
 
 model Doctor {
@@ -289,6 +366,9 @@ model SalesInvoiceItem {
 enum DiscountType {
   item
   bill
+  scheme
+  loyalty
+  coupon
 }
 
 model Discount {
@@ -299,6 +379,10 @@ model Discount {
   type             DiscountType
   amountOrPercent  Decimal      @db.Decimal(10, 2)
   isPercent        Boolean      @default(true)
+  // Set only when type is "scheme" / "coupon" respectively — links the
+  // discount row back to the offer that produced it, for reporting.
+  schemeId         String?
+  couponId         String?
   appliedByUserId  String
   approvedByUserId String?
   createdAt        DateTime     @default(now())
@@ -306,11 +390,15 @@ model Discount {
   tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   invoice     SalesInvoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   invoiceItem SalesInvoiceItem? @relation(fields: [invoiceItemId], references: [id])
+  scheme      Scheme?           @relation(fields: [schemeId], references: [id])
+  coupon      Coupon?           @relation(fields: [couponId], references: [id])
   appliedBy   User              @relation("DiscountAppliedBy", fields: [appliedByUserId], references: [id])
   approvedBy  User?             @relation("DiscountApprovedBy", fields: [approvedByUserId], references: [id])
 
   @@index([tenantId])
   @@index([invoiceId])
+  @@index([schemeId])
+  @@index([couponId])
   @@map("discounts")
 }
 
