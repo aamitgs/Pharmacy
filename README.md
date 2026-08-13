@@ -1,8 +1,10 @@
-# Pharmacy Billing — Phases 1 & 2 (Core Billing + Purchase & Inventory)
+# Pharmacy Billing — Phases 1–3 (Core Billing + Purchase & Inventory + Compliance)
 
 A GST-compliant, keyboard-first counter-billing system for a single-tenant
-retail pharmacy, extended with the supply side: purchase orders, GRN
-(goods received), purchase returns, and a supplier ledger. See
+retail pharmacy — extended with the supply side (purchase orders, GRN,
+purchase returns, supplier ledger) and with regulatory compliance (Schedule
+X narcotic register, GST/HSN/GSTR-ready reporting, prescription capture +
+pharmacist sign-off, license expiry tracking). See
 [Scope](#scope--whats-not-here) for what's deliberately out of scope for now.
 
 ## Stack
@@ -161,20 +163,63 @@ Extends the Phase 1 billing flow with the supply side, without changing it:
   in-list badges use. Each low-stock row links directly into GRN entry,
   pre-filled with that item.
 
+## Compliance (Phase 3)
+
+- **Narcotic / Schedule X register** (`/reports/narcotic-register`,
+  Owner/Pharmacist only): every Schedule X sale writes a
+  `NarcoticRegisterEntry` automatically inside the same transaction as the
+  sale. Insert-only at the application level — there are no update/delete
+  actions for it. Corrections are a separate linked reversal row
+  (`reversalOfId`), never an edit to the original, so the register stays a
+  faithful record of what was actually dispensed. Listed oldest-first (a
+  bound register is read top to bottom), with CSV export and an A4-landscape
+  print view for inspection.
+- **GST invoice formatting**: receipts show CGST/SGST as two separate
+  amounts (per line and in the total) instead of one combined figure,
+  re-deriving the intra-state 50/50 split `billing.ts` already computes —
+  no new stored value. An **HSN-wise summary** report (`/reports/hsn-summary`)
+  aggregates taxable value/tax by HSN code and rate for a selected period,
+  with CSV export.
+- **GSTR-1 / GSTR-3B export** (`/reports/gstr-export`, Owner/Pharmacist
+  only): three CSVs an accountant can use directly — GSTR-1 Table 7 (B2C
+  small, by place-of-supply and rate), GSTR-1 Table 12 (HSN summary, in the
+  offline tool's column layout), and GSTR-3B Table 3.1 (outward-supplies
+  summary). No GST portal API integration — output only. No B2B sheet:
+  `Customer` has no GSTIN field in this schema (walk-in retail only), so
+  every sale is inherently B2C.
+- **Prescription capture + pharmacist sign-off**: optional prescription
+  photo upload on Schedule H/H1/X sales (see
+  [Security notes](#security-notes) for how images are stored). A
+  Pharmacist or Owner at the till signs off via their own session
+  automatically; Counter Staff must have a Pharmacist/Owner re-authenticate
+  (email + password) in a dialog before the sale finalizes —
+  `completeSale` re-verifies those credentials server-side rather than
+  trusting the client.
+- **License expiry tracking**: a Compliance tab in Settings
+  (Owner/Pharmacist only) captures each license's number and expiry date
+  (retail/wholesale drug license, narcotic license, FSSAI registration) and
+  a configurable renewal-warning window (default 60 days). Surfaced on the
+  *existing* Alerts screen (a "License renewals" section, not a separate
+  screen) and as a dashboard banner, with severity escalating from
+  "upcoming" to "urgent" (≤15 days) to "expired". A license lapse is a
+  warning, not a billing block — that's a deliberate business decision to
+  revisit later, not an oversight.
+
 ## Scope / what's not here
 
-Deliberately out of scope for Phases 1–2 (see the original build specs for
-the full lists): multi-tenant signup/billing, GST return filing
-(GSTR-1/3B) and e-invoicing/e-way bill, purchase scheme tracking (treated
+Deliberately out of scope for Phases 1–3 (see the original build specs for
+the full lists): multi-tenant signup/billing, direct GST portal
+API/e-invoicing/e-way bill integration, purchase scheme tracking (treated
 as a manual rate adjustment, not a modeled entity), landed cost
 calculation (GRN rate is a flat per-unit rate), multi-branch transfers,
 supplier payment gateway/bank integration (manual ledger entry only),
 scheme/loyalty discounts, cloud backup, Marg/Vyapar importers, Hospital
 Mode, white-labeling beyond the basic logo/color/footer fields, AI
-features, real payment gateway integration, and SMS/WhatsApp
-notifications. The CSV import pipeline (`src/lib/import/`) is structured
-in independent stages — parse → map → validate → commit — specifically so
-a platform-specific pre-parser could be dropped in ahead of
+features, real payment gateway integration, SMS/WhatsApp notifications,
+and multi-state GSTIN/IGST logic beyond the basic intra-state assumption.
+The CSV import pipeline (`src/lib/import/`) is structured in independent
+stages — parse → map → validate → commit — specifically so a
+platform-specific pre-parser could be dropped in ahead of
 `validate`/`commit` in a later phase without touching those two stages.
 
 ## Scripts

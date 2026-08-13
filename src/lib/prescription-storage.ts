@@ -40,7 +40,10 @@ export async function savePrescriptionImage(tenantId: string, file: File): Promi
 
   const filename = `${randomUUID()}.${ext}`;
   const buffer = Buffer.from(await file.arrayBuffer());
-  await writeFile(path.join(tenantDir, filename), buffer);
+  // turbopackIgnore: this path is runtime-only (uploaded files), not a
+  // build-time dependency — without the annotation Turbopack traces the
+  // whole project into the standalone output because it can't tell.
+  await writeFile(path.join(/* turbopackIgnore: true */ tenantDir, filename), buffer);
 
   return `${tenantId}/${filename}`;
 }
