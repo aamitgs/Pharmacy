@@ -63,14 +63,21 @@ export async function getPurchaseOrder(id: string) {
   };
 }
 
-/** Purchase orders for a supplier that haven't already been received against — for the GRN "link a PO" picker. */
-export async function listOpenPurchaseOrdersForSupplier(supplierId: string) {
+/**
+ * Purchase orders for a supplier that haven't already been received
+ * against — for the GRN "link a PO" picker. `includePoId` always includes
+ * that one PO regardless of status, so a GRN opened via a specific PO's
+ * "Create GRN" link (e.g. a second partial receipt against an already-
+ * `received` PO) always has its pre-filled selection appear as a real
+ * option instead of silently falling back to "No PO" in the dropdown.
+ */
+export async function listOpenPurchaseOrdersForSupplier(supplierId: string, includePoId?: string) {
   const session = await requireSession();
   const orders = await prisma.purchaseOrder.findMany({
     where: {
       tenantId: session.user.tenantId,
       supplierId,
-      status: { in: ["draft", "sent"] },
+      OR: [{ status: { in: ["draft", "sent"] } }, ...(includePoId ? [{ id: includePoId }] : [])],
     },
     include: { items: true },
     orderBy: { createdAt: "desc" },

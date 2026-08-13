@@ -58,7 +58,14 @@ export function GrnForm({
 
   const [supplierId, setSupplierId] = useState(searchParams.get("supplierId") ?? "");
   const [purchaseOrderId, setPurchaseOrderId] = useState(searchParams.get("poId") ?? "");
-  const [openPos, setOpenPos] = useState<{ id: string; createdAt: string; itemCount: number }[]>([]);
+  // Frozen at mount: if the page was opened via a specific PO's "Create GRN"
+  // link, that PO must always appear as a real dropdown option even once
+  // its status moves past draft/sent — otherwise the pre-filled selection
+  // silently renders as "No PO" (see listOpenPurchaseOrdersForSupplier).
+  const [initialPoId] = useState(() => searchParams.get("poId") ?? "");
+  const [openPos, setOpenPos] = useState<
+    { id: string; status: string; createdAt: string; itemCount: number }[]
+  >([]);
   const [invoiceNo, setInvoiceNo] = useState("");
   const [invoiceDate, setInvoiceDate] = useState("");
 
@@ -102,10 +109,17 @@ export function GrnForm({
 
   useEffect(() => {
     if (!supplierId) return;
-    listOpenPurchaseOrdersForSupplier(supplierId).then((pos) =>
-      setOpenPos(pos.map((p) => ({ id: p.id, createdAt: p.createdAt.toString(), itemCount: p.itemCount })))
+    listOpenPurchaseOrdersForSupplier(supplierId, initialPoId || undefined).then((pos) =>
+      setOpenPos(
+        pos.map((p) => ({
+          id: p.id,
+          status: p.status,
+          createdAt: p.createdAt.toString(),
+          itemCount: p.itemCount,
+        }))
+      )
     );
-  }, [supplierId]);
+  }, [supplierId, initialPoId]);
 
   // The item combobox swaps its own <input> for a non-input "locked" pill
   // once an item is selected, and back again once cleared — so its ref can
@@ -268,6 +282,7 @@ export function GrnForm({
                 <SelectItem key={po.id} value={po.id}>
                   {po.itemCount} item{po.itemCount === 1 ? "" : "s"} ·{" "}
                   {new Date(po.createdAt).toLocaleDateString()}
+                  {po.status !== "draft" && po.status !== "sent" && ` · ${po.status}`}
                 </SelectItem>
               ))}
             </SelectContent>
