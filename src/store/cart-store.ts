@@ -31,6 +31,7 @@ interface CartState {
   patientName: string;
   patientAge: string;
   paymentMode: PaymentMode;
+  prescriptionImagePath: string | null;
   lastRemoved: RemovedLine | null;
   focusLineId: string | null;
 
@@ -50,6 +51,7 @@ interface CartState {
   setPatientName: (v: string) => void;
   setPatientAge: (v: string) => void;
   setPaymentMode: (mode: PaymentMode) => void;
+  setPrescriptionImagePath: (path: string | null) => void;
   reset: () => void;
 }
 
@@ -67,6 +69,7 @@ const initialState = {
   patientName: "",
   patientAge: "",
   paymentMode: "cash" as PaymentMode,
+  prescriptionImagePath: null as string | null,
   lastRemoved: null as RemovedLine | null,
   focusLineId: null as string | null,
 };
@@ -158,6 +161,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   setPatientName: (v) => set({ patientName: v }),
   setPatientAge: (v) => set({ patientAge: v }),
   setPaymentMode: (mode) => set({ paymentMode: mode }),
+  setPrescriptionImagePath: (path) => set({ prescriptionImagePath: path }),
 
   reset: () => set({ ...initialState, lines: [] }),
 }));

@@ -5,7 +5,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ReceiptView } from "./receipt-view";
 import type { ReceiptData } from "@/lib/actions/invoices";
-import { ChevronLeft, Printer } from "lucide-react";
+import { ChevronLeft, Printer, FileImage } from "lucide-react";
+import { format } from "date-fns";
 
 type PaperSize = "58mm" | "80mm" | "a4";
 
@@ -33,6 +34,17 @@ export function ReceiptPageClient({ data }: { data: ReceiptData }) {
           <ChevronLeft className="h-4 w-4" /> Back to billing
         </Link>
         <div className="flex items-center gap-2">
+          {data.prescriptionImageUrl && (
+            <Button asChild size="sm" variant="outline">
+              <a
+                href={`/api/files/prescriptions/${data.prescriptionImageUrl}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <FileImage className="h-4 w-4" /> Prescription
+              </a>
+            </Button>
+          )}
           <div className="flex overflow-hidden rounded-md border">
             {(Object.keys(PAPER_CONFIG) as PaperSize[]).map((size) => (
               <button
@@ -51,6 +63,13 @@ export function ReceiptPageClient({ data }: { data: ReceiptData }) {
           </Button>
         </div>
       </div>
+
+      {data.pharmacistSignoff && (
+        <p className="mb-2 text-center text-xs text-muted-foreground print:hidden">
+          Signed off by {data.pharmacistSignoff.name}
+          {data.pharmacistSignoff.at ? ` · ${format(new Date(data.pharmacistSignoff.at), "dd MMM yyyy, h:mm a")}` : ""}
+        </p>
+      )}
 
       <div
         className="mx-auto border shadow-sm print:border-0 print:shadow-none"

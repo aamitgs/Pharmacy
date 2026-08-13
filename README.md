@@ -119,6 +119,15 @@ restore flow yet.
   never Vercel. This is safe *because* TLS termination and host validation
   are the reverse proxy's job — don't expose the app container directly to
   the internet without one.
+- **Prescription images**: stored on local disk under
+  `PRESCRIPTION_STORAGE_DIR` (default `./storage/prescriptions`), outside
+  `public/`. Chosen over S3 for simplicity given this app's single-server
+  Docker deployment — swap `src/lib/prescription-storage.ts` for an
+  S3-compatible client if that ever changes. Files are only readable
+  through the authenticated `/api/files/prescriptions/...` route, which
+  cross-checks the requesting user's tenant against the invoice the path
+  is attached to rather than trusting the URL. Back this directory up
+  alongside the database if you rely on it for compliance records.
 
 ## Purchase & Inventory (Phase 2)
 

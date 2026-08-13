@@ -3,6 +3,7 @@
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
+import type { UserRole } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
@@ -51,6 +52,42 @@ export async function verifyManagerPin(pin: string) {
   return bcrypt.compare(pin, tenant.managerPinHash);
 }
 
+const SIGNOFF_ROLES: readonly UserRole[] = ["pharmacist", "owner"];
+
+/**
+ * Optimistic check used to unlock the "Complete sale" button in the
+ * re-auth dialog — completeSale re-verifies these same credentials
+ * server-side before it will actually write a sign-off, the same
+ * belt-and-suspenders pattern checkDiscountCap uses for the manager PIN.
+ */
+export async function verifyPharmacistCredentials(email: string, password: string) {
+  const session = await requireSession();
+  const user = await prisma.user.findFirst({
+    where: { tenantId: session.user.tenantId, email, role: { in: [...SIGNOFF_ROLES] } },
+  });
+  if (!user) return null;
+  const valid = await bcrypt.compare(password, user.passwordHash);
+  return valid ? { userId: user.id, name: user.name } : null;
+}
+
+async function resolvePharmacistSignoff(
+  tenantId: string,
+  sessionUserId: string,
+  sessionRole: UserRole,
+  reauth: { email: string; password: string } | undefined
+): Promise<string> {
+  if (SIGNOFF_ROLES.includes(sessionRole)) return sessionUserId;
+
+  if (!reauth) throw new Error("PHARMACIST_SIGNOFF_REQUIRED");
+  const user = await prisma.user.findFirst({
+    where: { tenantId, email: reauth.email, role: { in: [...SIGNOFF_ROLES] } },
+  });
+  if (!user || !(await bcrypt.compare(reauth.password, user.passwordHash))) {
+    throw new Error("PHARMACIST_SIGNOFF_REQUIRED");
+  }
+  return user.id;
+}
+
 const quickDoctorSchema = z.object({
   name: z.string().trim().min(1),
   registrationNo: z.string().trim().optional(),
@@ -86,6 +123,8 @@ const completeSaleSchema = z.object({
     value: z.coerce.number().min(0),
   }),
   managerPin: z.string().optional(),
+  prescriptionImagePath: z.string().optional(),
+  pharmacistReauth: z.object({ email: z.string().email(), password: z.string().min(1) }).optional(),
   lines: z.array(saleLineSchema).min(1, "Cart is empty"),
 });
 
@@ -141,6 +180,17 @@ export async function completeSale(input: CompleteSaleInput) {
       "A doctor and patient name are required for prescription (Schedule H/H1/X) items."
     );
   }
+
+  // A Pharmacist/Owner already at the till signs off via their own session;
+  // Counter Staff must have a Pharmacist/Owner re-authenticate first.
+  const signoffUserId = needsPrescription
+    ? await resolvePharmacistSignoff(
+        tenantId,
+        session.user.id,
+        session.user.role,
+        parsed.pharmacistReauth
+      )
+    : null;
 
   if (parsed.paymentMode === "credit") {
     if (!parsed.customerId) {
@@ -203,6 +253,9 @@ export async function completeSale(input: CompleteSaleInput) {
         total: billing.total,
         paymentMode: parsed.paymentMode,
         status: "completed",
+        prescriptionImageUrl: parsed.prescriptionImagePath || null,
+        pharmacistSignoffUserId: signoffUserId,
+        pharmacistSignoffAt: signoffUserId ? now : null,
       },
     });
 
@@ -258,10 +311,11 @@ export async function completeSale(input: CompleteSaleInput) {
             qty: line.qty,
             doctorId: parsed.doctorId || null,
             patientName: parsed.patientName || null,
-            // TODO(prescription sign-off, Phase 3): once the pharmacist
-            // sign-off gate lands on this action, use the signed-off
-            // pharmacist's id here instead of whoever completed the sale.
-            dispensedByUserId: session.user.id,
+            // Schedule X is in REQUIRES_PRESCRIPTION, so needsPrescription
+            // is true whenever this branch runs and signoffUserId is
+            // already resolved — the pharmacist who signed off the
+            // dispense, not necessarily whoever rang up the sale.
+            dispensedByUserId: signoffUserId!,
           },
         });
       }

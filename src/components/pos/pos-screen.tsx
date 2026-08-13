@@ -6,13 +6,17 @@ import { toast } from "sonner";
 import type { UserRole } from "@/generated/prisma/client";
 import { useCartStore } from "@/store/cart-store";
 import { computeBilling, effectiveDiscountPercent, type BillingLineInput } from "@/lib/billing";
-import { completeSale, verifyManagerPin } from "@/lib/actions/pos";
+import { completeSale, verifyManagerPin, verifyPharmacistCredentials } from "@/lib/actions/pos";
 import { SearchPanel } from "./search-panel";
 import { CartTable } from "./cart-table";
 import { BottomBar } from "./bottom-bar";
 import { PrescriptionFields } from "./prescription-fields";
+import { PrescriptionUpload } from "./prescription-upload";
 import { ManagerPinDialog } from "./manager-pin-dialog";
+import { PharmacistSignoffDialog } from "./pharmacist-signoff-dialog";
 import type { PosItem, PosCustomer, PosDoctor } from "./types";
+
+const SELF_SIGNOFF_ROLES = new Set(["pharmacist", "owner"]);
 
 const REQUIRES_PRESCRIPTION = new Set(["H", "H1", "X"]);
 
@@ -48,6 +52,12 @@ export function PosScreen({
   }>({ open: false, pending: null, error: null, forFinalSubmit: false });
   const pinVerifiedRef = useRef(false);
   const managerPinRef = useRef<string | undefined>(undefined);
+  const [signoffDialog, setSignoffDialog] = useState<{
+    open: boolean;
+    error: string | null;
+    submitting: boolean;
+  }>({ open: false, error: null, submitting: false });
+  const pharmacistReauthRef = useRef<{ email: string; password: string } | undefined>(undefined);
 
   const catalogByItemId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
 
@@ -190,6 +200,8 @@ export function PosScreen({
         paymentMode: store.paymentMode,
         billDiscount: store.billDiscount,
         managerPin: managerPinRef.current,
+        prescriptionImagePath: store.prescriptionImagePath ?? undefined,
+        pharmacistReauth: pharmacistReauthRef.current,
         lines: store.lines.map((l) => ({
           itemId: l.itemId,
           batchId: l.batchId,
@@ -201,10 +213,19 @@ export function PosScreen({
       store.reset();
       pinVerifiedRef.current = false;
       managerPinRef.current = undefined;
+      pharmacistReauthRef.current = undefined;
       router.push(`/invoices/${result.invoiceId}/receipt`);
     } catch (e) {
       if (e instanceof Error && e.message === "MANAGER_PIN_REQUIRED") {
         setPinDialog({ open: true, pending: null, error: null, forFinalSubmit: true });
+      } else if (e instanceof Error && e.message === "PHARMACIST_SIGNOFF_REQUIRED") {
+        const retry = pharmacistReauthRef.current !== undefined;
+        pharmacistReauthRef.current = undefined;
+        setSignoffDialog({
+          open: true,
+          error: retry ? "Incorrect pharmacist email or password." : null,
+          submitting: false,
+        });
       } else {
         toast.error(e instanceof Error ? e.message : "Could not complete sale");
       }
@@ -215,6 +236,18 @@ export function PosScreen({
 
   function handleCompleteSale() {
     if (blockedReason || submitting) return;
+    void submitSale();
+  }
+
+  async function handleSignoffSubmit(email: string, password: string) {
+    setSignoffDialog((d) => ({ ...d, submitting: true, error: null }));
+    const result = await verifyPharmacistCredentials(email, password);
+    if (!result) {
+      setSignoffDialog({ open: true, error: "Incorrect pharmacist email or password.", submitting: false });
+      return;
+    }
+    pharmacistReauthRef.current = { email, password };
+    setSignoffDialog({ open: false, error: null, submitting: false });
     void submitSale();
   }
 
@@ -236,16 +269,29 @@ export function PosScreen({
         <SearchPanel items={items} onSelect={handleAddItem} inputRef={searchInputRef} />
 
         {needsPrescription && (
-          <PrescriptionFields
-            doctors={doctorList}
-            doctorId={store.doctorId}
-            onDoctorChange={store.setDoctor}
-            patientName={store.patientName}
-            onPatientNameChange={store.setPatientName}
-            patientAge={store.patientAge}
-            onPatientAgeChange={store.setPatientAge}
-            onDoctorCreated={(d) => setDoctorList((prev) => [...prev, d])}
-          />
+          <div className="space-y-2">
+            <PrescriptionFields
+              doctors={doctorList}
+              doctorId={store.doctorId}
+              onDoctorChange={store.setDoctor}
+              patientName={store.patientName}
+              onPatientNameChange={store.setPatientName}
+              patientAge={store.patientAge}
+              onPatientAgeChange={store.setPatientAge}
+              onDoctorCreated={(d) => setDoctorList((prev) => [...prev, d])}
+            />
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <PrescriptionUpload
+                path={store.prescriptionImagePath}
+                onPathChange={store.setPrescriptionImagePath}
+              />
+              <p className="text-xs text-muted-foreground">
+                {SELF_SIGNOFF_ROLES.has(role)
+                  ? "You will sign off this dispense."
+                  : "A pharmacist will need to sign off before this sale completes."}
+              </p>
+            </div>
+          </div>
         )}
 
         <CartTable
@@ -286,6 +332,14 @@ export function PosScreen({
             ? "This sale includes a discount above your approval limit."
             : "This discount exceeds the staff limit. Enter the manager PIN to override."
         }
+      />
+
+      <PharmacistSignoffDialog
+        open={signoffDialog.open}
+        onOpenChange={(open) => setSignoffDialog((d) => ({ ...d, open }))}
+        onSubmit={handleSignoffSubmit}
+        error={signoffDialog.error}
+        submitting={signoffDialog.submitting}
       />
     </div>
   );

@@ -11,6 +11,7 @@ export async function getInvoiceForReceipt(id: string) {
       branch: true,
       customer: true,
       doctor: true,
+      pharmacistSignoff: { select: { name: true } },
       items: {
         include: { item: true, batch: true },
       },
@@ -51,6 +52,10 @@ export async function getInvoiceForReceipt(id: string) {
       pharmacyName: tenant.pharmacyName,
       invoiceFooterText: tenant.invoiceFooterText,
     },
+    prescriptionImageUrl: invoice.prescriptionImageUrl,
+    pharmacistSignoff: invoice.pharmacistSignoff
+      ? { name: invoice.pharmacistSignoff.name, at: invoice.pharmacistSignoffAt }
+      : null,
     // Intra-state assumption (CGST = SGST = half the line's tax) matches the
     // convention already established in src/lib/billing.ts's computeBilling
     // — same split, just re-derived here for display since SalesInvoiceItem
