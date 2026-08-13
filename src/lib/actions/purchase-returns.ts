@@ -93,7 +93,7 @@ export async function createPurchaseReturn(input: PurchaseReturnInput) {
   const returnId = await prisma.$transaction(async (tx) => {
     for (const row of parsed.items) {
       const batch = await tx.batch.findFirst({
-        where: { id: row.batchId, itemId: row.itemId },
+        where: { id: row.batchId, itemId: row.itemId, item: { tenantId: session.user.tenantId } },
       });
       if (!batch) throw new Error("One of the batches in this return was not found");
       if (batch.currentQty < row.qty) {
