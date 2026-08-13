@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/rbac";
 import { LICENSE_TYPES, type LicenseType } from "@/lib/license-types";
+import { getBranchFilter } from "@/lib/branch-scope";
 
 const LICENSE_LABELS: Record<LicenseType, string> = {
   retail: "Retail drug license",
@@ -22,10 +23,16 @@ export async function getAlerts() {
   const session = await requireSession();
   const tenantId = session.user.tenantId;
 
+  // Low-stock/near-expiry reflect whichever branch is currently selected
+  // (or every branch, consolidated, for Owner in "all branches" view) —
+  // stock physically sitting at another branch shouldn't mask a shortage
+  // at the one you're actually looking at.
+  const branchFilter = await getBranchFilter(tenantId, session.user.role);
+
   const [items, tenant, branches] = await Promise.all([
     prisma.item.findMany({
       where: { tenantId },
-      include: { batches: true },
+      include: { batches: { where: branchFilter } },
       orderBy: { name: "asc" },
     }),
     prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } }),
@@ -42,7 +49,7 @@ export async function getAlerts() {
   const lowStockItemIds = lowStockEntries.map(({ item }) => item.id);
   const recentGrnItems = lowStockItemIds.length
     ? await prisma.grnItem.findMany({
-        where: { itemId: { in: lowStockItemIds }, grn: { tenantId } },
+        where: { itemId: { in: lowStockItemIds }, grn: { tenantId, ...branchFilter } },
         orderBy: { grn: { receivedAt: "desc" } },
         include: { grn: { include: { supplier: true } } },
       })

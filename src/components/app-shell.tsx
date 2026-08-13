@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import type { UserRole } from "@/generated/prisma/client";
 import { cn } from "@/lib/utils";
 import { SignOutButton } from "@/components/sign-out-button";
+import { BranchSwitcher } from "@/components/branch-switcher";
 import {
   LayoutDashboard,
   ScanBarcode,
@@ -19,7 +20,12 @@ import {
   TriangleAlert,
   ShieldAlert,
   FileSpreadsheet,
+  Building2,
+  ArrowLeftRight,
   Settings,
+  Percent,
+  Award,
+  Ticket,
 } from "lucide-react";
 
 type NavItem = {
@@ -38,9 +44,70 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/purchase-orders", label: "Purchase Orders", icon: ClipboardList },
   { href: "/grn", label: "GRN", icon: PackageCheck },
   { href: "/purchase-returns", label: "Purchase Returns", icon: Undo2 },
+  { href: "/transfers", label: "Stock Transfers", icon: ArrowLeftRight },
+  {
+    href: "/branches",
+    label: "Branches",
+    icon: Building2,
+    roles: ["owner", "pharmacist"],
+  },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/doctors", label: "Doctors", icon: Stethoscope },
-  { href: "/invoices", label: "Sales Register", icon: Receipt },
+  { href: "/invoices", label: "Invoices", icon: Receipt },
+  {
+    href: "/schemes",
+    label: "Schemes",
+    icon: Percent,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/loyalty-tiers",
+    label: "Loyalty Tiers",
+    icon: Award,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/coupons",
+    label: "Coupons",
+    icon: Ticket,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/reports/sales-register",
+    label: "Sales Register",
+    icon: FileSpreadsheet,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/reports/purchase-register",
+    label: "Purchase Register",
+    icon: FileSpreadsheet,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/reports/stock-ledger",
+    label: "Stock Ledger",
+    icon: FileSpreadsheet,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/reports/margin",
+    label: "Margin Report",
+    icon: FileSpreadsheet,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/reports/discounts",
+    label: "Discount Report",
+    icon: FileSpreadsheet,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/reports/movers",
+    label: "Fast / Slow Movers",
+    icon: FileSpreadsheet,
+    roles: ["owner", "pharmacist"],
+  },
   {
     href: "/reports/narcotic-register",
     label: "Narcotic Register",
@@ -64,9 +131,15 @@ const NAV_ITEMS: NavItem[] = [
 
 export function AppShell({
   user,
+  branchScope,
   children,
 }: {
   user: { name: string; role: UserRole; pharmacyName: string };
+  branchScope: {
+    branches: { id: string; name: string }[];
+    branchId: string | null;
+    isAllBranches: boolean;
+  };
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -109,7 +182,17 @@ export function AppShell({
           </SignOutButton>
         </div>
       </aside>
-      <main className="flex-1 overflow-x-hidden bg-background print:w-full">{children}</main>
+      <main className="flex flex-1 flex-col overflow-x-hidden bg-background print:w-full">
+        <div className="flex h-12 shrink-0 items-center justify-end border-b px-4 print:hidden">
+          <BranchSwitcher
+            branches={branchScope.branches}
+            selectedBranchId={branchScope.branchId}
+            isAllBranches={branchScope.isAllBranches}
+            canViewAll={user.role === "owner"}
+          />
+        </div>
+        <div className="flex-1 overflow-y-auto">{children}</div>
+      </main>
     </div>
   );
 }

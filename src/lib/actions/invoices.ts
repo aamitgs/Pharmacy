@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/rbac";
+import { getBranchFilter } from "@/lib/branch-scope";
 
 export async function getInvoiceForReceipt(id: string) {
   const session = await requireSession();
@@ -91,8 +92,9 @@ export type ReceiptData = NonNullable<Awaited<ReturnType<typeof getInvoiceForRec
 
 export async function listInvoices() {
   const session = await requireSession();
+  const branchFilter = await getBranchFilter(session.user.tenantId, session.user.role);
   const invoices = await prisma.salesInvoice.findMany({
-    where: { tenantId: session.user.tenantId },
+    where: { tenantId: session.user.tenantId, ...branchFilter },
     include: { customer: true },
     orderBy: { invoiceDate: "desc" },
     take: 200,

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/rbac";
 import { getBackupStatus } from "@/lib/actions/backup";
 import { getAlerts } from "@/lib/actions/alerts";
+import { getBranchFilter } from "@/lib/branch-scope";
 
 export async function getDashboardData() {
   const session = await requireSession();
@@ -12,9 +13,11 @@ export async function getDashboardData() {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
+  const branchFilter = await getBranchFilter(tenantId, session.user.role);
+
   const [salesToday, tenant, backupStatus, alerts, supplierOutstanding] = await Promise.all([
     prisma.salesInvoice.aggregate({
-      where: { tenantId, status: "completed", invoiceDate: { gte: startOfDay } },
+      where: { tenantId, status: "completed", invoiceDate: { gte: startOfDay }, ...branchFilter },
       _sum: { total: true },
       _count: true,
     }),

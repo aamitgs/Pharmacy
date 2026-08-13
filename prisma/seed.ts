@@ -102,6 +102,7 @@ async function main() {
     create: {
       id: "demo-batch-para-1",
       itemId: item.id,
+      branchId: branch.id,
       batchNo: "PCM24A",
       mfgDate: new Date("2024-06-01"),
       expiryDate: new Date("2027-06-30"),
@@ -138,6 +139,7 @@ async function main() {
     create: {
       id: "demo-batch-cough-1",
       itemId: cough.id,
+      branchId: branch.id,
       batchNo: "CRX24B",
       mfgDate: new Date("2024-01-01"),
       expiryDate: new Date("2026-09-15"),

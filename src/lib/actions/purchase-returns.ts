@@ -9,6 +9,7 @@ import {
   serializePurchaseReturnItem,
   serializeSupplier,
 } from "@/lib/serialize";
+import { getBranchFilter, resolveConcreteBranch } from "@/lib/branch-scope";
 
 const returnItemSchema = z.object({
   itemId: z.string().min(1),
@@ -28,8 +29,9 @@ export type PurchaseReturnInput = z.infer<typeof returnSchema>;
 
 export async function listPurchaseReturns() {
   const session = await requireSession();
+  const branchFilter = await getBranchFilter(session.user.tenantId, session.user.role);
   const returns = await prisma.purchaseReturn.findMany({
-    where: { tenantId: session.user.tenantId },
+    where: { tenantId: session.user.tenantId, ...branchFilter },
     include: { supplier: true, items: true },
     orderBy: { returnDate: "desc" },
   });
@@ -76,6 +78,9 @@ export async function createPurchaseReturn(input: PurchaseReturnInput) {
   const session = await requireRole(["owner", "pharmacist"]);
   const parsed = returnSchema.parse(input);
 
+  const branchId = await resolveConcreteBranch(session.user.tenantId, session.user.role);
+  if (!branchId) throw new Error("No branch configured for this pharmacy yet.");
+
   const supplier = await prisma.supplier.findFirst({
     where: { id: parsed.supplierId, tenantId: session.user.tenantId },
   });
@@ -83,7 +88,7 @@ export async function createPurchaseReturn(input: PurchaseReturnInput) {
 
   if (parsed.grnId) {
     const grn = await prisma.grn.findFirst({
-      where: { id: parsed.grnId, tenantId: session.user.tenantId },
+      where: { id: parsed.grnId, tenantId: session.user.tenantId, branchId },
     });
     if (!grn) throw new Error("GRN not found");
   }
@@ -92,8 +97,10 @@ export async function createPurchaseReturn(input: PurchaseReturnInput) {
 
   const returnId = await prisma.$transaction(async (tx) => {
     for (const row of parsed.items) {
+      // branchId scoped — a batch physically at another branch must never
+      // be decremented by a return filed from this branch.
       const batch = await tx.batch.findFirst({
-        where: { id: row.batchId, itemId: row.itemId, item: { tenantId: session.user.tenantId } },
+        where: { id: row.batchId, itemId: row.itemId, branchId, item: { tenantId: session.user.tenantId } },
       });
       if (!batch) throw new Error("One of the batches in this return was not found");
       if (batch.currentQty < row.qty) {
@@ -104,6 +111,7 @@ export async function createPurchaseReturn(input: PurchaseReturnInput) {
     const pr = await tx.purchaseReturn.create({
       data: {
         tenantId: session.user.tenantId,
+        branchId,
         grnId: parsed.grnId || null,
         supplierId: parsed.supplierId,
         reason: parsed.reason,

@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import type { UserRole } from "@/generated/prisma/client";
 import { useCartStore } from "@/store/cart-store";
-import { computeBilling, effectiveDiscountPercent, type BillingLineInput } from "@/lib/billing";
+import { computeBilling, effectiveDiscountPercent, type BillingLineInput, type StackedDiscountInput } from "@/lib/billing";
+import { applySchemes } from "@/lib/scheme-engine";
 import { completeSale, verifyManagerPin, verifyPharmacistCredentials } from "@/lib/actions/pos";
+import { validateCoupon } from "@/lib/actions/coupons";
 import { SearchPanel } from "./search-panel";
 import { CartTable } from "./cart-table";
 import { BottomBar } from "./bottom-bar";
@@ -14,7 +16,7 @@ import { PrescriptionFields } from "./prescription-fields";
 import { PrescriptionUpload } from "./prescription-upload";
 import { ManagerPinDialog } from "./manager-pin-dialog";
 import { PharmacistSignoffDialog } from "./pharmacist-signoff-dialog";
-import type { PosItem, PosCustomer, PosDoctor } from "./types";
+import type { PosItem, PosCustomer, PosDoctor, PosScheme } from "./types";
 
 const SELF_SIGNOFF_ROLES = new Set(["pharmacist", "owner"]);
 
@@ -31,6 +33,7 @@ export function PosScreen({
   branchId,
   staffDiscountCapPercent,
   role,
+  schemes,
 }: {
   items: PosItem[];
   customers: PosCustomer[];
@@ -38,12 +41,16 @@ export function PosScreen({
   branchId: string | null;
   staffDiscountCapPercent: number;
   role: UserRole;
+  schemes: PosScheme[];
 }) {
   const router = useRouter();
   const store = useCartStore();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [doctorList, setDoctorList] = useState(doctors);
   const [submitting, setSubmitting] = useState(false);
+  const [couponInput, setCouponInput] = useState("");
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [couponChecking, setCouponChecking] = useState(false);
   const [pinDialog, setPinDialog] = useState<{
     open: boolean;
     pending: PendingDiscount | null;
@@ -61,6 +68,23 @@ export function PosScreen({
 
   const catalogByItemId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
 
+  const selectedCustomer = customers.find((c) => c.id === store.customerId) ?? null;
+
+  // Live "why" preview only — completeSale re-evaluates schemes and the
+  // coupon server-side and never trusts these client-computed amounts.
+  const schemeApplications = useMemo(
+    () =>
+      applySchemes(
+        schemes,
+        store.lines.map((l) => ({ lineId: l.lineId, itemId: l.itemId, qty: l.qty, rate: l.rate }))
+      ),
+    [schemes, store.lines]
+  );
+  const schemeByLineId = useMemo(
+    () => new Map(schemeApplications.map((a) => [a.lineId, a])),
+    [schemeApplications]
+  );
+
   const billing = useMemo(() => {
     const lineInputs: BillingLineInput[] = store.lines.map((l) => ({
       lineId: l.lineId,
@@ -68,9 +92,23 @@ export function PosScreen({
       rate: l.rate,
       taxRate: l.taxRate,
       discountPercent: l.discountPercent,
+      schemeDiscountAmount: schemeByLineId.get(l.lineId)?.discountAmount ?? 0,
     }));
-    return computeBilling(lineInputs, store.billDiscount);
-  }, [store.lines, store.billDiscount]);
+    const billDiscounts: StackedDiscountInput[] = [
+      { type: "bill", isPercent: store.billDiscount.isPercent, value: store.billDiscount.value },
+    ];
+    if (selectedCustomer?.loyaltyTierName) {
+      billDiscounts.push({ type: "loyalty", isPercent: true, value: selectedCustomer.loyaltyDiscountPercent });
+    }
+    if (store.appliedCoupon) {
+      billDiscounts.push({
+        type: "coupon",
+        isPercent: store.appliedCoupon.type === "percent",
+        value: store.appliedCoupon.value,
+      });
+    }
+    return computeBilling(lineInputs, billDiscounts);
+  }, [store.lines, store.billDiscount, store.appliedCoupon, schemeByLineId, selectedCustomer]);
 
   const needsPrescription = store.lines.some((l) => REQUIRES_PRESCRIPTION.has(l.scheduleClass));
 
@@ -137,6 +175,28 @@ export function PosScreen({
     );
   }
 
+  async function handleApplyCoupon() {
+    if (!couponInput.trim()) return;
+    setCouponChecking(true);
+    setCouponError(null);
+    try {
+      const result = await validateCoupon(couponInput.trim(), store.customerId);
+      if (!result.valid || !result.coupon) {
+        setCouponError(result.error ?? "Invalid coupon code.");
+        return;
+      }
+      store.setAppliedCoupon(result.coupon);
+      setCouponInput("");
+    } finally {
+      setCouponChecking(false);
+    }
+  }
+
+  function handleRemoveCoupon() {
+    store.setAppliedCoupon(null);
+    setCouponError(null);
+  }
+
   async function handlePinSubmit(pin: string) {
     const valid = await verifyManagerPin(pin);
     if (!valid) {
@@ -199,6 +259,7 @@ export function PosScreen({
         patientAge: store.patientAge ? Number(store.patientAge) : undefined,
         paymentMode: store.paymentMode,
         billDiscount: store.billDiscount,
+        couponCode: store.appliedCoupon?.code,
         managerPin: managerPinRef.current,
         prescriptionImagePath: store.prescriptionImagePath ?? undefined,
         pharmacistReauth: pharmacistReauthRef.current,
@@ -304,6 +365,7 @@ export function PosScreen({
           onDiscountChange={handleLineDiscountChange}
           onOverrideBatch={handleOverrideBatch}
           onRemove={handleRemove}
+          schemeByLineId={schemeByLineId}
         />
       </div>
 
@@ -320,6 +382,13 @@ export function PosScreen({
         onCompleteSale={handleCompleteSale}
         submitting={submitting}
         blockedReason={blockedReason}
+        appliedCoupon={store.appliedCoupon}
+        couponInput={couponInput}
+        onCouponInputChange={setCouponInput}
+        onApplyCoupon={() => void handleApplyCoupon()}
+        onRemoveCoupon={handleRemoveCoupon}
+        couponError={couponError}
+        couponChecking={couponChecking}
       />
 
       <ManagerPinDialog

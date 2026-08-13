@@ -1,4 +1,5 @@
 import type { PlainItem, PlainBatch } from "@/lib/serialize";
+import type { SchemeDef } from "@/lib/scheme-engine";
 
 export type PosItem = PlainItem & { batches: PlainBatch[] };
 
@@ -8,6 +9,8 @@ export interface PosCustomer {
   phone: string | null;
   creditLimit: number | null;
   outstandingBalance: number;
+  loyaltyTierName: string | null;
+  loyaltyDiscountPercent: number;
 }
 
 export interface PosDoctor {
@@ -16,3 +19,5 @@ export interface PosDoctor {
   registrationNo: string | null;
   clinicName: string | null;
 }
+
+export type PosScheme = SchemeDef;

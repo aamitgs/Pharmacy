@@ -7,10 +7,14 @@ import { writeAuditLog } from "@/lib/audit";
 import { validateRows } from "@/lib/import/validate";
 import { SCHEDULE_CLASSES, type ImportFieldKey } from "@/lib/import/fields";
 import type { NormalizedRow } from "@/lib/import/normalize";
+import { resolveConcreteBranch } from "@/lib/branch-scope";
 
 export async function commitImport(rows: NormalizedRow[]) {
   const session = await requireRole(["owner", "pharmacist"]);
   const tenantId = session.user.tenantId;
+
+  const branchId = await resolveConcreteBranch(tenantId, session.user.role);
+  if (!branchId) throw new Error("No branch configured for this pharmacy yet.");
 
   // Re-validate server-side — never trust the client's preview pass.
   const { rows: validated } = validateRows(rows);
@@ -68,6 +72,7 @@ export async function commitImport(rows: NormalizedRow[]) {
       await prisma.batch.create({
         data: {
           itemId: item.id,
+          branchId,
           batchNo: raw.batchNo!,
           mfgDate: raw.mfgDate ? new Date(raw.mfgDate) : null,
           expiryDate: new Date(raw.expiryDate!),

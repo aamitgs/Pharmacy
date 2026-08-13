@@ -5,20 +5,26 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
+import { getBranchFilter } from "@/lib/branch-scope";
 
 /**
  * Owner/Pharmacist only — this is compliance data reviewed under audit
- * pressure, not something Counter Staff needs day-to-day.
+ * pressure, not something Counter Staff needs day-to-day. Branch-scoped by
+ * default: a narcotic register is a bound, per-premises document in real
+ * regulatory practice, so an inspector at one branch expects that branch's
+ * entries, not every branch mixed together. Owner can switch to "all
+ * branches" for a tenant-wide view.
  */
 export async function listNarcoticRegisterEntries(from: string, to: string) {
   const session = await requireRole(["owner", "pharmacist"]);
+  const branchFilter = await getBranchFilter(session.user.tenantId, session.user.role);
 
   const fromDate = new Date(from);
   const toDate = new Date(to);
   toDate.setHours(23, 59, 59, 999);
 
   const entries = await prisma.narcoticRegisterEntry.findMany({
-    where: { tenantId: session.user.tenantId, dispensedAt: { gte: fromDate, lte: toDate } },
+    where: { tenantId: session.user.tenantId, ...branchFilter, dispensedAt: { gte: fromDate, lte: toDate } },
     include: {
       item: { select: { name: true, unit: true } },
       batch: { select: { batchNo: true } },

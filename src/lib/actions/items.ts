@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole, requireSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
 import { serializeItem, serializeBatch } from "@/lib/serialize";
+import { getBranchFilter, resolveConcreteBranch } from "@/lib/branch-scope";
 
 const scheduleClassEnum = z.enum(["none", "H", "H1", "X", "G"]);
 
@@ -40,11 +41,14 @@ export type BatchInput = z.infer<typeof batchSchema>;
 
 export async function listItems() {
   const session = await requireSession();
-  const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: session.user.tenantId } });
+  const [tenant, branchFilter] = await Promise.all([
+    prisma.tenant.findUniqueOrThrow({ where: { id: session.user.tenantId } }),
+    getBranchFilter(session.user.tenantId, session.user.role),
+  ]);
 
   const items = await prisma.item.findMany({
     where: { tenantId: session.user.tenantId },
-    include: { batches: true },
+    include: { batches: { where: branchFilter } },
     orderBy: { name: "asc" },
   });
 
@@ -71,12 +75,18 @@ export async function listItems() {
 
 export async function getItem(id: string) {
   const session = await requireSession();
+  const branchFilter = await getBranchFilter(session.user.tenantId, session.user.role);
   const item = await prisma.item.findFirst({
     where: { id, tenantId: session.user.tenantId },
-    include: { batches: { orderBy: { expiryDate: "asc" } } },
+    include: {
+      batches: { where: branchFilter, orderBy: { expiryDate: "asc" }, include: { branch: { select: { name: true } } } },
+    },
   });
   if (!item) return null;
-  return { ...serializeItem(item), batches: item.batches.map(serializeBatch) };
+  return {
+    ...serializeItem(item),
+    batches: item.batches.map((b) => ({ ...serializeBatch(b), branchName: b.branch.name })),
+  };
 }
 
 export async function createItem(input: ItemInput) {
@@ -138,9 +148,13 @@ export async function createBatch(input: BatchInput) {
   });
   if (!item) throw new Error("Item not found");
 
+  const branchId = await resolveConcreteBranch(session.user.tenantId, session.user.role);
+  if (!branchId) throw new Error("No branch configured for this pharmacy yet.");
+
   const batch = await prisma.batch.create({
     data: {
       itemId: parsed.itemId,
+      branchId,
       batchNo: parsed.batchNo,
       mfgDate: parsed.mfgDate ? new Date(parsed.mfgDate) : null,
       expiryDate: new Date(parsed.expiryDate),

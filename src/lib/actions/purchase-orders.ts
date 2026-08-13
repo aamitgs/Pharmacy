@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole, requireSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
 import { serializePurchaseOrderItem, serializeSupplier } from "@/lib/serialize";
+import { getBranchFilter, resolveConcreteBranch } from "@/lib/branch-scope";
 
 const poItemSchema = z.object({
   itemId: z.string().min(1),
@@ -22,8 +23,9 @@ export type PurchaseOrderInput = z.infer<typeof poSchema>;
 
 export async function listPurchaseOrders() {
   const session = await requireSession();
+  const branchFilter = await getBranchFilter(session.user.tenantId, session.user.role);
   const orders = await prisma.purchaseOrder.findMany({
-    where: { tenantId: session.user.tenantId },
+    where: { tenantId: session.user.tenantId, ...branchFilter },
     include: { supplier: true, items: true },
     orderBy: { createdAt: "desc" },
   });
@@ -73,9 +75,13 @@ export async function getPurchaseOrder(id: string) {
  */
 export async function listOpenPurchaseOrdersForSupplier(supplierId: string, includePoId?: string) {
   const session = await requireSession();
+  // Scoped to the branch a GRN would actually be received into — a PO
+  // placed by another branch isn't something this GRN should link to.
+  const branchId = await resolveConcreteBranch(session.user.tenantId, session.user.role);
   const orders = await prisma.purchaseOrder.findMany({
     where: {
       tenantId: session.user.tenantId,
+      branchId: branchId ?? undefined,
       supplierId,
       OR: [{ status: { in: ["draft", "sent"] } }, ...(includePoId ? [{ id: includePoId }] : [])],
     },
@@ -99,8 +105,8 @@ export async function createPurchaseOrder(input: PurchaseOrderInput) {
   });
   if (!supplier) throw new Error("Supplier not found");
 
-  const branch = await prisma.branch.findFirst({ where: { tenantId: session.user.tenantId } });
-  if (!branch) throw new Error("No branch configured for this tenant");
+  const branchId = await resolveConcreteBranch(session.user.tenantId, session.user.role);
+  if (!branchId) throw new Error("No branch configured for this tenant");
 
   const itemIds = [...new Set(parsed.items.map((i) => i.itemId))];
   const ownedItemCount = await prisma.item.count({
@@ -113,7 +119,7 @@ export async function createPurchaseOrder(input: PurchaseOrderInput) {
   const po = await prisma.purchaseOrder.create({
     data: {
       tenantId: session.user.tenantId,
-      branchId: branch.id,
+      branchId,
       supplierId: parsed.supplierId,
       createdByUserId: session.user.id,
       items: {

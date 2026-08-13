@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveSelectedBranch } from "@/lib/branch-scope";
 import { AppShell } from "@/components/app-shell";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -8,7 +9,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!session?.user) redirect("/login");
   if (session.user.mfaSetupRequired) redirect("/mfa-setup");
 
-  const tenant = await prisma.tenant.findUnique({ where: { id: session.user.tenantId } });
+  const [tenant, branchScope] = await Promise.all([
+    prisma.tenant.findUnique({ where: { id: session.user.tenantId } }),
+    resolveSelectedBranch(session.user.tenantId, session.user.role),
+  ]);
 
   return (
     <AppShell
@@ -17,6 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         role: session.user.role,
         pharmacyName: tenant?.pharmacyName ?? "Pharmacy",
       }}
+      branchScope={branchScope}
     >
       {children}
     </AppShell>

@@ -20,7 +20,7 @@ export default async function InvoicesPage() {
     <div className="space-y-4 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">Sales Register</h1>
+          <h1 className="text-lg font-semibold">Invoices</h1>
           <p className="text-sm text-muted-foreground">
             {invoices.length} invoice{invoices.length === 1 ? "" : "s"}
           </p>

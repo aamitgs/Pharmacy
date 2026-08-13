@@ -1,53 +1,23 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { updateBranchSettings } from "@/lib/actions/branch-settings";
-import type { LicenseType } from "@/lib/license-types";
+import { updateLicenseExpiryWindow } from "@/lib/actions/branch-settings";
+import { ArrowRight } from "lucide-react";
 
-const LICENSE_FIELDS: { type: LicenseType; label: string; numberField: "drugLicenseRetailNo" | "drugLicenseWholesaleNo" | "narcoticLicenseNo" | "fssaiNo" }[] = [
-  { type: "retail", label: "Retail drug license", numberField: "drugLicenseRetailNo" },
-  { type: "wholesale", label: "Wholesale drug license", numberField: "drugLicenseWholesaleNo" },
-  { type: "narcotic", label: "Narcotic license", numberField: "narcoticLicenseNo" },
-  { type: "fssai", label: "FSSAI registration", numberField: "fssaiNo" },
-];
-
-export function CompliancePanel({
-  initial,
-}: {
-  initial: {
-    drugLicenseRetailNo: string | null;
-    drugLicenseWholesaleNo: string | null;
-    narcoticLicenseNo: string | null;
-    fssaiNo: string | null;
-    licenseExpiryDates: Partial<Record<LicenseType, string>>;
-    licenseExpiryWindowDays: number;
-  };
-}) {
-  const [numbers, setNumbers] = useState({
-    drugLicenseRetailNo: initial.drugLicenseRetailNo ?? "",
-    drugLicenseWholesaleNo: initial.drugLicenseWholesaleNo ?? "",
-    narcoticLicenseNo: initial.narcoticLicenseNo ?? "",
-    fssaiNo: initial.fssaiNo ?? "",
-  });
-  const [expiryDates, setExpiryDates] = useState<Partial<Record<LicenseType, string>>>(
-    initial.licenseExpiryDates
-  );
+export function CompliancePanel({ initial }: { initial: { licenseExpiryWindowDays: number } }) {
   const [windowDays, setWindowDays] = useState(String(initial.licenseExpiryWindowDays));
   const [pending, startTransition] = useTransition();
 
   function submit() {
     startTransition(async () => {
       try {
-        await updateBranchSettings({
-          ...numbers,
-          licenseExpiryDates: expiryDates,
-          licenseExpiryWindowDays: Number(windowDays) || 60,
-        });
-        toast.success("Compliance profile updated");
+        await updateLicenseExpiryWindow({ licenseExpiryWindowDays: Number(windowDays) || 60 });
+        toast.success("Saved");
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Could not save changes");
       }
@@ -55,40 +25,17 @@ export function CompliancePanel({
   }
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-md space-y-6">
       <div>
-        <h2 className="text-sm font-medium">Licenses &amp; expiry dates</h2>
+        <h2 className="text-sm font-medium">License renewal warning window</h2>
         <p className="text-sm text-muted-foreground">
-          Tracked on the Alerts screen and dashboard — renewals due soon are surfaced automatically.
+          Licenses expiring within this many days appear on Alerts and the dashboard. Applies across all
+          branches.
         </p>
       </div>
 
-      <div className="space-y-4">
-        {LICENSE_FIELDS.map(({ type, label, numberField }) => (
-          <div key={type} className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor={`num-${type}`}>{label} no.</Label>
-              <Input
-                id={`num-${type}`}
-                value={numbers[numberField]}
-                onChange={(e) => setNumbers((n) => ({ ...n, [numberField]: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor={`exp-${type}`}>{label} expiry</Label>
-              <Input
-                id={`exp-${type}`}
-                type="date"
-                value={expiryDates[type] ?? ""}
-                onChange={(e) => setExpiryDates((d) => ({ ...d, [type]: e.target.value }))}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-
       <div className="space-y-1.5 max-w-xs">
-        <Label htmlFor="expiryWindow">Renewal warning window (days)</Label>
+        <Label htmlFor="expiryWindow">Days</Label>
         <Input
           id="expiryWindow"
           type="number"
@@ -96,14 +43,17 @@ export function CompliancePanel({
           value={windowDays}
           onChange={(e) => setWindowDays(e.target.value)}
         />
-        <p className="text-xs text-muted-foreground">
-          Licenses expiring within this many days appear on Alerts and the dashboard.
-        </p>
       </div>
 
       <Button disabled={pending} onClick={submit}>
-        Save compliance profile
+        Save
       </Button>
+
+      <div className="border-t pt-4">
+        <Link href="/branches" className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
+          Manage branch license numbers &amp; expiry dates <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
     </div>
   );
 }

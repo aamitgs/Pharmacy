@@ -7,8 +7,17 @@ import type { UserRole } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
-import { computeBilling, effectiveDiscountPercent, type BillingLineInput } from "@/lib/billing";
+import {
+  computeBilling,
+  effectiveDiscountPercent,
+  type BillingLineInput,
+  type StackedDiscountInput,
+} from "@/lib/billing";
 import { serializeItem, serializeBatch } from "@/lib/serialize";
+import { resolveConcreteBranch } from "@/lib/branch-scope";
+import { applySchemes } from "@/lib/scheme-engine";
+import { listActiveSchemesForBilling } from "@/lib/actions/schemes";
+import { validateCoupon } from "@/lib/actions/coupons";
 
 const REQUIRES_PRESCRIPTION: readonly string[] = ["H", "H1", "X"];
 
@@ -16,16 +25,25 @@ export async function getPosData() {
   const session = await requireSession();
   const tenantId = session.user.tenantId;
 
-  const [items, customers, doctors, branch, tenant] = await Promise.all([
+  // POS always bills against one concrete branch's stock — never "all
+  // branches" (Owner's consolidated view is for reporting, not billing).
+  const branchId = await resolveConcreteBranch(tenantId, session.user.role);
+
+  const [items, customers, doctors, tenant, schemes] = await Promise.all([
     prisma.item.findMany({
-      where: { tenantId, batches: { some: { currentQty: { gt: 0 } } } },
-      include: { batches: { where: { currentQty: { gt: 0 } }, orderBy: { expiryDate: "asc" } } },
+      where: { tenantId, batches: { some: { branchId: branchId ?? undefined, currentQty: { gt: 0 } } } },
+      include: {
+        batches: {
+          where: { branchId: branchId ?? undefined, currentQty: { gt: 0 } },
+          orderBy: { expiryDate: "asc" },
+        },
+      },
       orderBy: { name: "asc" },
     }),
-    prisma.customer.findMany({ where: { tenantId }, orderBy: { name: "asc" } }),
+    prisma.customer.findMany({ where: { tenantId }, orderBy: { name: "asc" }, include: { loyaltyTier: true } }),
     prisma.doctor.findMany({ where: { tenantId }, orderBy: { name: "asc" } }),
-    prisma.branch.findFirst({ where: { tenantId } }),
     prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } }),
+    listActiveSchemesForBilling(tenantId),
   ]);
 
   return {
@@ -34,14 +52,19 @@ export async function getPosData() {
       batches: item.batches.map(serializeBatch),
     })),
     customers: customers.map((c) => ({
-      ...c,
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
       creditLimit: c.creditLimit ? Number(c.creditLimit) : null,
       outstandingBalance: Number(c.outstandingBalance),
+      loyaltyTierName: c.loyaltyTier?.name ?? null,
+      loyaltyDiscountPercent: c.loyaltyTier ? Number(c.loyaltyTier.discountPercent) : 0,
     })),
     doctors,
-    branchId: branch?.id ?? null,
+    branchId,
     staffDiscountCapPercent: Number(tenant.staffDiscountCapPercent),
     role: session.user.role,
+    schemes,
   };
 }
 
@@ -122,6 +145,7 @@ const completeSaleSchema = z.object({
     isPercent: z.boolean(),
     value: z.coerce.number().min(0),
   }),
+  couponCode: z.string().trim().optional(),
   managerPin: z.string().optional(),
   prescriptionImagePath: z.string().optional(),
   pharmacistReauth: z.object({ email: z.string().email(), password: z.string().min(1) }).optional(),
@@ -162,9 +186,15 @@ export async function completeSale(input: CompleteSaleInput) {
     throw new Error("Invalid prescription image reference.");
   }
 
+  const branch = await prisma.branch.findFirst({ where: { id: parsed.branchId, tenantId } });
+  if (!branch) throw new Error("Invalid branch.");
+
   const batchIds = parsed.lines.map((l) => l.batchId);
   const batches = await prisma.batch.findMany({
-    where: { id: { in: batchIds }, item: { tenantId } },
+    // branchId scoped to the invoice's own branch — a batch physically at
+    // another branch (even same tenant) must never be decremented by a
+    // sale rung up elsewhere.
+    where: { id: { in: batchIds }, branchId: parsed.branchId, item: { tenantId } },
     include: { item: true },
   });
   const batchMap = new Map(batches.map((b) => [b.id, b]));
@@ -201,32 +231,73 @@ export async function completeSale(input: CompleteSaleInput) {
       )
     : null;
 
+  const customer = parsed.customerId
+    ? await prisma.customer.findFirst({
+        where: { id: parsed.customerId, tenantId },
+        include: { loyaltyTier: true },
+      })
+    : null;
+
   if (parsed.paymentMode === "credit") {
-    if (!parsed.customerId) {
+    if (!customer) {
       throw new Error("Select a customer with a credit limit for credit sales.");
     }
-    const customer = await prisma.customer.findFirst({
-      where: { id: parsed.customerId, tenantId },
-    });
-    if (!customer || customer.creditLimit === null) {
+    if (customer.creditLimit === null) {
       throw new Error("Selected customer does not have a credit account.");
     }
   }
 
+  // Schemes are re-fetched and re-evaluated server-side — the client's
+  // "why" badges are a preview, never a trusted input.
+  const activeSchemes = await listActiveSchemesForBilling(tenantId);
+  const schemeApplications = applySchemes(
+    activeSchemes,
+    parsed.lines.map((l) => ({
+      lineId: `${l.itemId}:${l.batchId}`,
+      itemId: l.itemId,
+      qty: l.qty,
+      rate: Number(batchMap.get(l.batchId)!.saleRate),
+    }))
+  );
+  const schemeByLineId = new Map(schemeApplications.map((a) => [a.lineId, a]));
+
+  const couponResult = parsed.couponCode
+    ? await validateCoupon(parsed.couponCode, parsed.customerId ?? null)
+    : null;
+  if (parsed.couponCode && (!couponResult || !couponResult.valid || !couponResult.coupon)) {
+    throw new Error(couponResult?.error ?? "Invalid coupon code.");
+  }
+  const coupon = couponResult?.coupon ?? null;
+
   const billingLines: BillingLineInput[] = parsed.lines.map((l) => {
     const batch = batchMap.get(l.batchId)!;
+    const lineId = `${l.itemId}:${l.batchId}`;
     return {
-      lineId: `${l.itemId}:${l.batchId}`,
+      lineId,
       qty: l.qty,
       rate: Number(batch.saleRate),
       taxRate: Number(batch.item.taxRate),
       discountPercent: l.discountPercent,
+      schemeDiscountAmount: schemeByLineId.get(lineId)?.discountAmount ?? 0,
     };
   });
 
-  const billing = computeBilling(billingLines, parsed.billDiscount);
+  const billDiscounts: StackedDiscountInput[] = [
+    { type: "bill", isPercent: parsed.billDiscount.isPercent, value: parsed.billDiscount.value },
+  ];
+  if (customer?.loyaltyTier) {
+    billDiscounts.push({ type: "loyalty", isPercent: true, value: Number(customer.loyaltyTier.discountPercent) });
+  }
+  if (coupon) {
+    billDiscounts.push({ type: "coupon", isPercent: coupon.type === "percent", value: coupon.value });
+  }
+
+  const billing = computeBilling(billingLines, billDiscounts);
 
   // Discount-cap check, defense in depth (client already gates this).
+  // Only the manual item/bill discounts are staff decisions subject to the
+  // cap — scheme/loyalty/coupon discounts are system-applied, not entered
+  // by staff, so they're excluded from the PIN-override check.
   for (let i = 0; i < parsed.lines.length; i++) {
     await checkDiscountCap(
       tenantId,
@@ -281,7 +352,8 @@ export async function completeSale(input: CompleteSaleInput) {
           qty: line.qty,
           rate: batch.saleRate,
           taxRate: batch.item.taxRate,
-          discountAmount: lineBilling.itemDiscountAmount + lineBilling.billDiscountShare,
+          discountAmount:
+            lineBilling.itemDiscountAmount + lineBilling.schemeDiscountAmount + lineBilling.billDiscountShare,
         },
       });
 
@@ -294,6 +366,24 @@ export async function completeSale(input: CompleteSaleInput) {
             type: "item",
             amountOrPercent: line.discountPercent,
             isPercent: true,
+            amount: lineBilling.itemDiscountAmount,
+            appliedByUserId: session.user.id,
+          },
+        });
+      }
+
+      const schemeApplied = schemeByLineId.get(`${line.itemId}:${line.batchId}`);
+      if (schemeApplied && lineBilling.schemeDiscountAmount > 0) {
+        await tx.discount.create({
+          data: {
+            tenantId,
+            invoiceId: invoice.id,
+            invoiceItemId: invoiceItem.id,
+            type: "scheme",
+            schemeId: schemeApplied.schemeId,
+            amountOrPercent: lineBilling.schemeDiscountAmount,
+            isPercent: false,
+            amount: lineBilling.schemeDiscountAmount,
             appliedByUserId: session.user.id,
           },
         });
@@ -338,16 +428,85 @@ export async function completeSale(input: CompleteSaleInput) {
           type: "bill",
           amountOrPercent: parsed.billDiscount.value,
           isPercent: parsed.billDiscount.isPercent,
+          amount: billing.billDiscounts.find((d) => d.type === "bill")?.amount ?? 0,
           appliedByUserId: session.user.id,
         },
       });
     }
 
-    if (parsed.paymentMode === "credit" && parsed.customerId) {
-      await tx.customer.update({
-        where: { id: parsed.customerId },
-        data: { outstandingBalance: { increment: billing.total } },
+    if (customer?.loyaltyTier) {
+      await tx.discount.create({
+        data: {
+          tenantId,
+          invoiceId: invoice.id,
+          type: "loyalty",
+          amountOrPercent: customer.loyaltyTier.discountPercent,
+          isPercent: true,
+          amount: billing.billDiscounts.find((d) => d.type === "loyalty")?.amount ?? 0,
+          appliedByUserId: session.user.id,
+        },
       });
+    }
+
+    if (coupon) {
+      // Re-checked inside the transaction against concurrent use — the
+      // pre-transaction validateCoupon call is only an optimistic check.
+      const fresh = await tx.coupon.findUnique({ where: { id: coupon.id } });
+      if (!fresh) throw new Error("Coupon is no longer available.");
+      if (fresh.usageLimit !== null && fresh.usageCount >= fresh.usageLimit) {
+        throw new Error("Coupon usage limit reached — remove it and try again.");
+      }
+      if (fresh.singleUsePerCustomer && parsed.customerId) {
+        const alreadyUsed = await tx.discount.findFirst({
+          where: { couponId: coupon.id, invoice: { customerId: parsed.customerId } },
+        });
+        if (alreadyUsed) throw new Error("This customer has already used this coupon.");
+      }
+      const couponUpdate = await tx.coupon.updateMany({
+        where: {
+          id: coupon.id,
+          ...(fresh.usageLimit !== null ? { usageCount: { lt: fresh.usageLimit } } : {}),
+        },
+        data: { usageCount: { increment: 1 } },
+      });
+      if (couponUpdate.count === 0) {
+        throw new Error("Coupon usage limit reached — remove it and try again.");
+      }
+      await tx.discount.create({
+        data: {
+          tenantId,
+          invoiceId: invoice.id,
+          type: "coupon",
+          couponId: coupon.id,
+          amountOrPercent: coupon.value,
+          isPercent: coupon.type === "percent",
+          amount: billing.billDiscounts.find((d) => d.type === "coupon")?.amount ?? 0,
+          appliedByUserId: session.user.id,
+        },
+      });
+    }
+
+    if (parsed.customerId) {
+      const updated = await tx.customer.update({
+        where: { id: parsed.customerId },
+        data: {
+          cumulativeSpend: { increment: billing.total },
+          ...(parsed.paymentMode === "credit" ? { outstandingBalance: { increment: billing.total } } : {}),
+        },
+      });
+
+      const tiers = await tx.loyaltyTier.findMany({
+        where: { tenantId },
+        orderBy: { minCumulativeSpend: "desc" },
+      });
+      const newSpend = Number(updated.cumulativeSpend);
+      const newTier = tiers.find((t) => Number(t.minCumulativeSpend) <= newSpend) ?? null;
+      if ((newTier?.id ?? null) !== updated.loyaltyTierId) {
+        await tx.customer.update({
+          where: { id: parsed.customerId },
+          data: { loyaltyTierId: newTier?.id ?? null },
+        });
+      }
     }
 
     return invoice;
@@ -365,6 +524,7 @@ export async function completeSale(input: CompleteSaleInput) {
   revalidatePath("/items");
   revalidatePath("/invoices");
   revalidatePath("/dashboard");
+  revalidatePath("/customers");
 
   return { invoiceId: result.id, invoiceNo: result.invoiceNo };
 }
