@@ -9,8 +9,16 @@ import type { LicenseType } from "@/lib/license-types";
 
 export async function getBranchSettings() {
   const session = await requireRole(["owner", "pharmacist"]);
-  const branch = await prisma.branch.findFirstOrThrow({ where: { tenantId: session.user.tenantId } });
-  const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: session.user.tenantId } });
+  // Nullable, not findFirstOrThrow — a tenant without a branch yet is a
+  // real state the rest of the app already handles gracefully (see
+  // getPosData/listOpenPurchaseOrdersForSupplier), and this is one of
+  // several independent Settings tabs, so it must not take the whole
+  // page down for tabs that have nothing to do with branch data.
+  const [branch, tenant] = await Promise.all([
+    prisma.branch.findFirst({ where: { tenantId: session.user.tenantId } }),
+    prisma.tenant.findUniqueOrThrow({ where: { id: session.user.tenantId } }),
+  ]);
+  if (!branch) return null;
 
   const expiryDates = (branch.licenseExpiryDates ?? {}) as Partial<Record<LicenseType, string>>;
 
@@ -46,7 +54,8 @@ export async function updateBranchSettings(input: UpdateBranchSettingsInput) {
   const parsed = updateSchema.parse(input);
   const tenantId = session.user.tenantId;
 
-  const branch = await prisma.branch.findFirstOrThrow({ where: { tenantId } });
+  const branch = await prisma.branch.findFirst({ where: { tenantId } });
+  if (!branch) throw new Error("No branch configured for this pharmacy yet.");
 
   const before = {
     drugLicenseRetailNo: branch.drugLicenseRetailNo,

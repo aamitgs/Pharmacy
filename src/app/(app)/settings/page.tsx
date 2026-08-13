@@ -53,9 +53,16 @@ export default async function SettingsPage() {
         <TabsContent value="security" className="pt-4">
           <SecurityPanel totpEnabled={user.totpEnabled} />
         </TabsContent>
-        {canCompliance && branchSettings && (
+        {canCompliance && (
           <TabsContent value="compliance" className="pt-4">
-            <CompliancePanel initial={branchSettings} />
+            {branchSettings ? (
+              <CompliancePanel initial={branchSettings} />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No branch is configured for this pharmacy yet — set one up before capturing
+                license details.
+              </p>
+            )}
           </TabsContent>
         )}
       </Tabs>
