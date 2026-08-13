@@ -2,7 +2,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { canEditItemMaster, canManageCompliance } from "@/lib/rbac";
 import { getBackupStatus } from "@/lib/actions/backup";
-import { getBranchSettings } from "@/lib/actions/branch-settings";
+import { getLicenseExpiryWindow } from "@/lib/actions/branch-settings";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BackupPanel } from "@/components/settings/backup-panel";
 import { SecurityPanel } from "@/components/settings/security-panel";
@@ -18,10 +18,10 @@ export default async function SettingsPage() {
   const canImport = canEditItemMaster(session.user.role);
   const canCompliance = canManageCompliance(session.user.role);
 
-  const [backupStatus, user, branchSettings] = await Promise.all([
+  const [backupStatus, user, licenseWindow] = await Promise.all([
     getBackupStatus(),
     prisma.user.findUniqueOrThrow({ where: { id: session.user.id } }),
-    canCompliance ? getBranchSettings() : Promise.resolve(null),
+    canCompliance ? getLicenseExpiryWindow() : Promise.resolve(null),
   ]);
 
   return (
@@ -53,16 +53,9 @@ export default async function SettingsPage() {
         <TabsContent value="security" className="pt-4">
           <SecurityPanel totpEnabled={user.totpEnabled} />
         </TabsContent>
-        {canCompliance && (
+        {canCompliance && licenseWindow && (
           <TabsContent value="compliance" className="pt-4">
-            {branchSettings ? (
-              <CompliancePanel initial={branchSettings} />
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No branch is configured for this pharmacy yet — set one up before capturing
-                license details.
-              </p>
-            )}
+            <CompliancePanel initial={licenseWindow} />
           </TabsContent>
         )}
       </Tabs>

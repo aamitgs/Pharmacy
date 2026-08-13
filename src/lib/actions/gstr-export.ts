@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/rbac";
 import { placeOfSupplyFromGstin } from "@/lib/gst-state-codes";
+import { getBranchFilter } from "@/lib/branch-scope";
 
 function round2(n: number) {
   return Math.round(n * 100) / 100;
@@ -39,12 +40,14 @@ export interface Gstr1B2csRow {
 
 export async function getGstr1B2cs(from: string, to: string): Promise<Gstr1B2csRow[]> {
   const session = await requireRole(["owner", "pharmacist"]);
+  const branchFilter = await getBranchFilter(session.user.tenantId, session.user.role);
   const { fromDate, toDate } = dateWindow(from, to);
 
   const lines = await prisma.salesInvoiceItem.findMany({
     where: {
       invoice: {
         tenantId: session.user.tenantId,
+        ...branchFilter,
         status: "completed",
         invoiceDate: { gte: fromDate, lte: toDate },
       },
@@ -93,12 +96,14 @@ export interface Gstr1HsnRow {
 
 export async function getGstr1HsnSummary(from: string, to: string): Promise<Gstr1HsnRow[]> {
   const session = await requireRole(["owner", "pharmacist"]);
+  const branchFilter = await getBranchFilter(session.user.tenantId, session.user.role);
   const { fromDate, toDate } = dateWindow(from, to);
 
   const lines = await prisma.salesInvoiceItem.findMany({
     where: {
       invoice: {
         tenantId: session.user.tenantId,
+        ...branchFilter,
         status: "completed",
         invoiceDate: { gte: fromDate, lte: toDate },
       },
@@ -168,12 +173,14 @@ export interface Gstr3bRow {
 /** Table 3.1 of GSTR-3B. Rows (b)/(d)/(e) are always zero — this app has no export, reverse-charge, or non-GST sale tracking. */
 export async function getGstr3bSummary(from: string, to: string): Promise<Gstr3bRow[]> {
   const session = await requireRole(["owner", "pharmacist"]);
+  const branchFilter = await getBranchFilter(session.user.tenantId, session.user.role);
   const { fromDate, toDate } = dateWindow(from, to);
 
   const lines = await prisma.salesInvoiceItem.findMany({
     where: {
       invoice: {
         tenantId: session.user.tenantId,
+        ...branchFilter,
         status: "completed",
         invoiceDate: { gte: fromDate, lte: toDate },
       },

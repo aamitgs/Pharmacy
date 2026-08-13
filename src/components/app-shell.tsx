@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import type { UserRole } from "@/generated/prisma/client";
 import { cn } from "@/lib/utils";
 import { SignOutButton } from "@/components/sign-out-button";
+import { BranchSwitcher } from "@/components/branch-switcher";
 import {
   LayoutDashboard,
   ScanBarcode,
@@ -19,6 +20,7 @@ import {
   TriangleAlert,
   ShieldAlert,
   FileSpreadsheet,
+  Building2,
   Settings,
 } from "lucide-react";
 
@@ -38,6 +40,12 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/purchase-orders", label: "Purchase Orders", icon: ClipboardList },
   { href: "/grn", label: "GRN", icon: PackageCheck },
   { href: "/purchase-returns", label: "Purchase Returns", icon: Undo2 },
+  {
+    href: "/branches",
+    label: "Branches",
+    icon: Building2,
+    roles: ["owner", "pharmacist"],
+  },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/doctors", label: "Doctors", icon: Stethoscope },
   { href: "/invoices", label: "Sales Register", icon: Receipt },
@@ -64,9 +72,15 @@ const NAV_ITEMS: NavItem[] = [
 
 export function AppShell({
   user,
+  branchScope,
   children,
 }: {
   user: { name: string; role: UserRole; pharmacyName: string };
+  branchScope: {
+    branches: { id: string; name: string }[];
+    branchId: string | null;
+    isAllBranches: boolean;
+  };
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -109,7 +123,17 @@ export function AppShell({
           </SignOutButton>
         </div>
       </aside>
-      <main className="flex-1 overflow-x-hidden bg-background print:w-full">{children}</main>
+      <main className="flex flex-1 flex-col overflow-x-hidden bg-background print:w-full">
+        <div className="flex h-12 shrink-0 items-center justify-end border-b px-4 print:hidden">
+          <BranchSwitcher
+            branches={branchScope.branches}
+            selectedBranchId={branchScope.branchId}
+            isAllBranches={branchScope.isAllBranches}
+            canViewAll={user.role === "owner"}
+          />
+        </div>
+        <div className="flex-1 overflow-y-auto">{children}</div>
+      </main>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole, requireSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
 import { serializeGrnItem, serializeSupplier } from "@/lib/serialize";
+import { getBranchFilter, resolveConcreteBranch } from "@/lib/branch-scope";
 
 const grnItemSchema = z.object({
   itemId: z.string().min(1),
@@ -29,8 +30,9 @@ export type GrnInput = z.infer<typeof grnSchema>;
 
 export async function listGrns() {
   const session = await requireSession();
+  const branchFilter = await getBranchFilter(session.user.tenantId, session.user.role);
   const grns = await prisma.grn.findMany({
-    where: { tenantId: session.user.tenantId },
+    where: { tenantId: session.user.tenantId, ...branchFilter },
     include: { supplier: true, items: true },
     orderBy: { receivedAt: "desc" },
   });
@@ -76,6 +78,9 @@ export async function createGrn(input: GrnInput) {
   const session = await requireRole(["owner", "pharmacist"]);
   const parsed = grnSchema.parse(input);
 
+  const branchId = await resolveConcreteBranch(session.user.tenantId, session.user.role);
+  if (!branchId) throw new Error("No branch configured for this pharmacy yet.");
+
   const supplier = await prisma.supplier.findFirst({
     where: { id: parsed.supplierId, tenantId: session.user.tenantId },
   });
@@ -94,6 +99,7 @@ export async function createGrn(input: GrnInput) {
     const grn = await tx.grn.create({
       data: {
         tenantId: session.user.tenantId,
+        branchId,
         purchaseOrderId: parsed.purchaseOrderId || null,
         supplierId: parsed.supplierId,
         supplierInvoiceNo: parsed.supplierInvoiceNo,
@@ -111,8 +117,11 @@ export async function createGrn(input: GrnInput) {
       const expiryDate = new Date(row.expiryDate);
       const mfgDate = row.mfgDate ? new Date(row.mfgDate) : null;
 
+      // Scoped to this branch — the same batch number can exist as a
+      // separate row at another branch (received there independently, or
+      // arrived via a stock transfer), so matching must not cross branches.
       const existingBatch = await tx.batch.findFirst({
-        where: { itemId: row.itemId, batchNo: row.batchNo },
+        where: { itemId: row.itemId, batchNo: row.batchNo, branchId },
       });
 
       const batch = existingBatch
@@ -129,6 +138,7 @@ export async function createGrn(input: GrnInput) {
         : await tx.batch.create({
             data: {
               itemId: row.itemId,
+              branchId,
               batchNo: row.batchNo,
               mfgDate,
               expiryDate,

@@ -47,6 +47,7 @@ model Tenant {
   grns                  Grn[]
   purchaseReturns       PurchaseReturn[]
   supplierLedgerEntries SupplierLedgerEntry[]
+  stockTransfers        StockTransfer[]
 
   narcoticRegisterEntries NarcoticRegisterEntry[]
 
@@ -73,11 +74,16 @@ model Branch {
   licenseExpiryDates       Json?
   createdAt                DateTime @default(now())
 
-  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  salesInvoices  SalesInvoice[]
-  purchaseOrders PurchaseOrder[]
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  salesInvoices   SalesInvoice[]
+  purchaseOrders  PurchaseOrder[]
+  grns            Grn[]
+  batches         Batch[]
+  purchaseReturns PurchaseReturn[]
 
   narcoticRegisterEntries NarcoticRegisterEntry[]
+  stockTransfersFrom      StockTransfer[]         @relation("StockTransferFrom")
+  stockTransfersTo        StockTransfer[]         @relation("StockTransferTo")
 
   @@index([tenantId])
   @@map("branches")
@@ -117,6 +123,7 @@ model Item {
   purchaseOrderItems  PurchaseOrderItem[]
   grnItems            GrnItem[]
   purchaseReturnItems PurchaseReturnItem[]
+  stockTransferItems  StockTransferItem[]
 
   narcoticRegisterEntries NarcoticRegisterEntry[]
 
@@ -128,6 +135,11 @@ model Item {
 model Batch {
   id           String    @id @default(cuid())
   itemId       String
+  // A batch is physically at one branch — it's the GRN that received it (or
+  // a stock transfer) that pins it there. The same batch number can exist
+  // as separate Batch rows at different branches; a transfer creates a new
+  // row at the destination rather than splitting one row across branches.
+  branchId     String
   batchNo      String
   mfgDate      DateTime?
   expiryDate   DateTime
@@ -140,14 +152,18 @@ model Batch {
   updatedAt    DateTime  @updatedAt
 
   item                Item                 @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  branch              Branch               @relation(fields: [branchId], references: [id])
   salesInvoiceItems   SalesInvoiceItem[]
   grnItems            GrnItem[]
   purchaseReturnItems PurchaseReturnItem[]
+  stockTransferItems  StockTransferItem[]
 
   narcoticRegisterEntries NarcoticRegisterEntry[]
 
   @@index([itemId])
   @@index([itemId, expiryDate])
+  @@index([branchId])
+  @@index([branchId, itemId, batchNo])
   @@map("batches")
 }
 
@@ -334,6 +350,9 @@ model User {
   salesInvoicesSignedOff   SalesInvoice[]          @relation("SalesInvoicePharmacistSignoff")
   narcoticEntriesDispensed NarcoticRegisterEntry[] @relation("NarcoticEntryDispensedBy")
 
+  stockTransfersRequested StockTransfer[] @relation("StockTransferRequestedBy")
+  stockTransfersApproved  StockTransfer[] @relation("StockTransferApprovedBy")
+
   @@unique([tenantId, email])
   @@index([tenantId])
   @@map("users")
@@ -460,6 +479,9 @@ model PurchaseOrderItem {
 model Grn {
   id                  String   @id @default(cuid())
   tenantId            String
+  // Which branch physically received the goods — new in Phase 4. Backfilled
+  // for existing rows to the tenant's pre-Phase-4 single branch.
+  branchId            String
   purchaseOrderId     String?
   supplierId          String
   supplierInvoiceNo   String
@@ -468,6 +490,7 @@ model Grn {
   receivedByUserId    String
 
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch        Branch         @relation(fields: [branchId], references: [id])
   purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
   supplier      Supplier       @relation(fields: [supplierId], references: [id])
   receivedBy    User           @relation("GrnReceivedBy", fields: [receivedByUserId], references: [id])
@@ -478,6 +501,7 @@ model Grn {
   @@index([tenantId])
   @@index([tenantId, receivedAt])
   @@index([purchaseOrderId])
+  @@index([branchId])
   @@map("grns")
 }
 
@@ -507,6 +531,10 @@ model GrnItem {
 model PurchaseReturn {
   id              String   @id @default(cuid())
   tenantId        String
+  // Which branch's stock this return decrements — new in Phase 4,
+  // backfilled for existing rows from the tenant's pre-Phase-4 single
+  // branch. Independent of grnId since a return can be standalone.
+  branchId        String
   grnId           String?
   supplierId      String
   returnDate      DateTime @default(now())
@@ -515,6 +543,7 @@ model PurchaseReturn {
   createdByUserId String
 
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch   @relation(fields: [branchId], references: [id])
   grn       Grn?     @relation(fields: [grnId], references: [id])
   supplier  Supplier @relation(fields: [supplierId], references: [id])
   createdBy User     @relation("PurchaseReturnCreatedBy", fields: [createdByUserId], references: [id])
@@ -524,6 +553,7 @@ model PurchaseReturn {
   @@index([tenantId])
   @@index([tenantId, returnDate])
   @@index([grnId])
+  @@index([branchId])
   @@map("purchase_returns")
 }
 
@@ -569,6 +599,64 @@ model SupplierLedgerEntry {
   @@index([tenantId])
   @@index([supplierId, createdAt])
   @@map("supplier_ledger_entries")
+}
+
+// ---------------------------------------------------------------------------
+// Multi-branch — Phase 4
+// ---------------------------------------------------------------------------
+
+enum StockTransferStatus {
+  pending
+  approved
+  completed
+  rejected
+}
+
+// Manual request/approve flow between two branches of the same tenant.
+// fromBranch is the source (fulfilling) branch; toBranch is the branch that
+// requested stock. Approval and stock movement happen atomically in the
+// same action — "approved" stays a defined status for the audit trail, but
+// a transfer moves straight from pending to completed rather than resting
+// in "approved" first; there is no separate ship/receive step in this MVP.
+model StockTransfer {
+  id                String              @id @default(cuid())
+  tenantId          String
+  fromBranchId      String
+  toBranchId        String
+  status            StockTransferStatus @default(pending)
+  requestedByUserId String
+  approvedByUserId  String?
+  createdAt         DateTime            @default(now())
+  completedAt       DateTime?
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fromBranch  Branch @relation("StockTransferFrom", fields: [fromBranchId], references: [id])
+  toBranch    Branch @relation("StockTransferTo", fields: [toBranchId], references: [id])
+  requestedBy User   @relation("StockTransferRequestedBy", fields: [requestedByUserId], references: [id])
+  approvedBy  User?  @relation("StockTransferApprovedBy", fields: [approvedByUserId], references: [id])
+
+  items StockTransferItem[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([fromBranchId])
+  @@index([toBranchId])
+  @@map("stock_transfers")
+}
+
+model StockTransferItem {
+  id         String @id @default(cuid())
+  transferId String
+  itemId     String
+  batchId    String
+  qty        Int
+
+  transfer StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  item     Item          @relation(fields: [itemId], references: [id])
+  batch    Batch         @relation(fields: [batchId], references: [id])
+
+  @@index([transferId])
+  @@map("stock_transfer_items")
 }
 
 // ---------------------------------------------------------------------------

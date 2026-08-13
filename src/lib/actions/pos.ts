@@ -9,6 +9,7 @@ import { requireSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
 import { computeBilling, effectiveDiscountPercent, type BillingLineInput } from "@/lib/billing";
 import { serializeItem, serializeBatch } from "@/lib/serialize";
+import { resolveConcreteBranch } from "@/lib/branch-scope";
 
 const REQUIRES_PRESCRIPTION: readonly string[] = ["H", "H1", "X"];
 
@@ -16,15 +17,23 @@ export async function getPosData() {
   const session = await requireSession();
   const tenantId = session.user.tenantId;
 
-  const [items, customers, doctors, branch, tenant] = await Promise.all([
+  // POS always bills against one concrete branch's stock — never "all
+  // branches" (Owner's consolidated view is for reporting, not billing).
+  const branchId = await resolveConcreteBranch(tenantId, session.user.role);
+
+  const [items, customers, doctors, tenant] = await Promise.all([
     prisma.item.findMany({
-      where: { tenantId, batches: { some: { currentQty: { gt: 0 } } } },
-      include: { batches: { where: { currentQty: { gt: 0 } }, orderBy: { expiryDate: "asc" } } },
+      where: { tenantId, batches: { some: { branchId: branchId ?? undefined, currentQty: { gt: 0 } } } },
+      include: {
+        batches: {
+          where: { branchId: branchId ?? undefined, currentQty: { gt: 0 } },
+          orderBy: { expiryDate: "asc" },
+        },
+      },
       orderBy: { name: "asc" },
     }),
     prisma.customer.findMany({ where: { tenantId }, orderBy: { name: "asc" } }),
     prisma.doctor.findMany({ where: { tenantId }, orderBy: { name: "asc" } }),
-    prisma.branch.findFirst({ where: { tenantId } }),
     prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } }),
   ]);
 
@@ -39,7 +48,7 @@ export async function getPosData() {
       outstandingBalance: Number(c.outstandingBalance),
     })),
     doctors,
-    branchId: branch?.id ?? null,
+    branchId,
     staffDiscountCapPercent: Number(tenant.staffDiscountCapPercent),
     role: session.user.role,
   };
@@ -162,9 +171,15 @@ export async function completeSale(input: CompleteSaleInput) {
     throw new Error("Invalid prescription image reference.");
   }
 
+  const branch = await prisma.branch.findFirst({ where: { id: parsed.branchId, tenantId } });
+  if (!branch) throw new Error("Invalid branch.");
+
   const batchIds = parsed.lines.map((l) => l.batchId);
   const batches = await prisma.batch.findMany({
-    where: { id: { in: batchIds }, item: { tenantId } },
+    // branchId scoped to the invoice's own branch — a batch physically at
+    // another branch (even same tenant) must never be decremented by a
+    // sale rung up elsewhere.
+    where: { id: { in: batchIds }, branchId: parsed.branchId, item: { tenantId } },
     include: { item: true },
   });
   const batchMap = new Map(batches.map((b) => [b.id, b]));

@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/rbac";
+import { getBranchFilter } from "@/lib/branch-scope";
 
 export interface HsnSummaryRow {
   hsnCode: string;
@@ -25,6 +26,7 @@ function round2(n: number) {
  */
 export async function getHsnSummary(from: string, to: string): Promise<HsnSummaryRow[]> {
   const session = await requireRole(["owner", "pharmacist"]);
+  const branchFilter = await getBranchFilter(session.user.tenantId, session.user.role);
 
   const fromDate = new Date(from);
   const toDate = new Date(to);
@@ -34,6 +36,7 @@ export async function getHsnSummary(from: string, to: string): Promise<HsnSummar
     where: {
       invoice: {
         tenantId: session.user.tenantId,
+        ...branchFilter,
         status: "completed",
         invoiceDate: { gte: fromDate, lte: toDate },
       },
