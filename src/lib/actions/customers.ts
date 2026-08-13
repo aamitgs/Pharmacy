@@ -150,6 +150,7 @@ export interface CustomerStatementLine {
 export interface CustomerStatement {
   customerId: string;
   customerName: string;
+  customerPhone: string | null;
   from: string;
   to: string;
   openingBalance: number;
@@ -201,6 +202,7 @@ export async function getCustomerStatement(customerId: string, from: string, to:
   return {
     customerId,
     customerName: customer.name,
+    customerPhone: customer.phone,
     from,
     to,
     openingBalance,

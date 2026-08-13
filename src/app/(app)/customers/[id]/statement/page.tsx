@@ -6,6 +6,7 @@ import { defaultMonthRange } from "@/lib/date-range";
 import { DateRangeFilter } from "@/components/reports/date-range-filter";
 import { PrintButton } from "@/components/reports/print-button";
 import { RestrictedAccess } from "@/components/reports/restricted-access";
+import { StatementWhatsAppButton } from "@/components/whatsapp/statement-whatsapp-button";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { format } from "date-fns";
@@ -55,6 +56,12 @@ export default async function CustomerStatementPage({
             </a>
           </Button>
           <PrintButton />
+          <StatementWhatsAppButton
+            customerId={id}
+            from={from}
+            to={to}
+            defaultPhone={statement.customerPhone}
+          />
         </div>
       </div>
 

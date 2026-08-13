@@ -205,6 +205,28 @@ Extends the Phase 1 billing flow with the supply side, without changing it:
   warning, not a billing block — that's a deliberate business decision to
   revisit later, not an oversight.
 
+## Integrations & offline hardening (Phase 5)
+
+- **Credit customer ledger**: `Customer.outstandingBalance` is now a cache
+  column only — the real balance is `SUM(CustomerLedgerEntry.amount)`
+  (mirrors the Supplier ledger from Phase 2). Every credit sale writes a
+  `sale` entry; a customer detail page (`/customers/[id]`) lets staff
+  record `payment` entries and view a printable, CSV-exportable statement
+  of account (`/customers/[id]/statement`) with opening/closing balance.
+- **WhatsApp receipt/statement delivery**: uses
+  [Gupshup](https://www.gupshup.io/developer/docs/bot-platform/guide/whatsapp-api-documentation)'s
+  WhatsApp Business API. Set `GUPSHUP_API_KEY`, `GUPSHUP_SOURCE_NUMBER`, and
+  `GUPSHUP_APP_NAME` (see `.env.example`) — without them, the "Send via
+  WhatsApp" button (on the receipt and statement pages) reports "not
+  configured" instead of crashing, and every attempt is logged to
+  `WhatsAppLog` either way. **What's actually sent is a formatted text
+  summary, not a PDF/image attachment** — this app's other "PDF" exports
+  are all browser print-to-PDF (no server-side document rendering exists
+  anywhere in the codebase), so there's no pipeline to attach a receipt
+  image to a WhatsApp message yet. Adding one (headless rendering + hosting
+  the resulting file for Gupshup's document-message API) is a real,
+  reasonably-sized follow-up, not something faked here.
+
 ## Scope / what's not here
 
 Deliberately out of scope for Phases 1–3 (see the original build specs for

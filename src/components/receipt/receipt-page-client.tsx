@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ReceiptView } from "./receipt-view";
+import { SendWhatsAppButton } from "@/components/whatsapp/send-whatsapp-button";
+import { sendReceiptWhatsApp } from "@/lib/actions/whatsapp";
 import type { ReceiptData } from "@/lib/actions/invoices";
 import { ChevronLeft, Printer, FileImage } from "lucide-react";
 import { format } from "date-fns";
@@ -61,6 +63,10 @@ export function ReceiptPageClient({ data }: { data: ReceiptData }) {
           <Button size="sm" onClick={() => window.print()}>
             <Printer className="h-4 w-4" /> Print
           </Button>
+          <SendWhatsAppButton
+            defaultPhone={data.customer?.phone ?? null}
+            onSend={(phone) => sendReceiptWhatsApp(data.id, phone)}
+          />
         </div>
       </div>
 

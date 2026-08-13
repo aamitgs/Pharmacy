@@ -35,7 +35,7 @@ export async function getInvoiceForReceipt(id: string) {
     patientName: invoice.patientName,
     patientAge: invoice.patientAge,
     customer: invoice.customer
-      ? { name: invoice.customer.name, phone: invoice.customer.phone }
+      ? { id: invoice.customer.id, name: invoice.customer.name, phone: invoice.customer.phone }
       : null,
     doctor: invoice.doctor
       ? { name: invoice.doctor.name, registrationNo: invoice.doctor.registrationNo }

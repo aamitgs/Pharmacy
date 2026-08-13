@@ -56,6 +56,7 @@ model Tenant {
   coupons      Coupon[]
 
   customerLedgerEntries CustomerLedgerEntry[]
+  whatsappLogs          WhatsAppLog[]
 
   @@map("tenants")
 }
@@ -199,11 +200,47 @@ model Customer {
   loyaltyTier   LoyaltyTier?          @relation(fields: [loyaltyTierId], references: [id])
   salesInvoices SalesInvoice[]
   ledgerEntries CustomerLedgerEntry[]
+  whatsappLogs  WhatsAppLog[]
 
   @@index([tenantId])
   @@index([tenantId, phone])
   @@index([loyaltyTierId])
   @@map("customers")
+}
+
+enum WhatsAppMessageType {
+  receipt
+  statement
+  reminder
+}
+
+enum WhatsAppStatus {
+  sent
+  failed
+}
+
+model WhatsAppLog {
+  id          String               @id @default(cuid())
+  tenantId    String
+  customerId  String?
+  invoiceId   String?
+  phone       String
+  messageType WhatsAppMessageType
+  status      WhatsAppStatus
+  // Provider error text, or "not configured" when no WhatsApp API
+  // credentials are set — kept distinct from `status` so the UI can show
+  // staff *why* a send failed, not just that it did.
+  note        String?
+  sentAt      DateTime             @default(now())
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer?     @relation(fields: [customerId], references: [id])
+  invoice  SalesInvoice? @relation(fields: [invoiceId], references: [id])
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([invoiceId])
+  @@map("whatsapp_logs")
 }
 
 enum CustomerLedgerEntryType {
@@ -370,6 +407,7 @@ model SalesInvoice {
   items                   SalesInvoiceItem[]
   discounts               Discount[]
   narcoticRegisterEntries NarcoticRegisterEntry[]
+  whatsappLogs            WhatsAppLog[]
 
   @@unique([tenantId, invoiceNo])
   @@index([tenantId, invoiceDate])
