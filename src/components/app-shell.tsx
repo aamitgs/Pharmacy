@@ -12,6 +12,7 @@ import {
   Users,
   Stethoscope,
   Receipt,
+  Truck,
   Settings,
 } from "lucide-react";
 
@@ -26,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/pos", label: "Billing", icon: ScanBarcode },
   { href: "/items", label: "Items & Batches", icon: Package },
+  { href: "/suppliers", label: "Suppliers", icon: Truck },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/doctors", label: "Doctors", icon: Stethoscope },
   { href: "/invoices", label: "Sales Register", icon: Receipt },

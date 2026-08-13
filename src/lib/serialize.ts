@@ -1,4 +1,4 @@
-import type { Item, Batch, Customer } from "@/generated/prisma/client";
+import type { Item, Batch, Customer, Supplier, SupplierLedgerEntry } from "@/generated/prisma/client";
 
 // Prisma's Decimal is a class instance, not a plain object — it doesn't
 // survive the React Server Component serialization boundary (props passed
@@ -37,4 +37,24 @@ export function serializeCustomer(customer: Customer): PlainCustomer {
     creditLimit: customer.creditLimit ? Number(customer.creditLimit) : null,
     outstandingBalance: Number(customer.outstandingBalance),
   };
+}
+
+// Supplier.outstandingBalance is a cache column only — callers must overwrite
+// it with a ledger-summed value (see computeSupplierOutstandingBalance in
+// src/lib/actions/suppliers.ts) before this reaches the client, never trust
+// the raw column.
+export type PlainSupplier = Omit<Supplier, "outstandingBalance"> & {
+  outstandingBalance: number;
+};
+
+export function serializeSupplier(supplier: Supplier): PlainSupplier {
+  return { ...supplier, outstandingBalance: Number(supplier.outstandingBalance) };
+}
+
+export type PlainSupplierLedgerEntry = Omit<SupplierLedgerEntry, "amount"> & {
+  amount: number;
+};
+
+export function serializeSupplierLedgerEntry(entry: SupplierLedgerEntry): PlainSupplierLedgerEntry {
+  return { ...entry, amount: Number(entry.amount) };
 }

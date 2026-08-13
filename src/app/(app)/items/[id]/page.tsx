@@ -10,11 +10,12 @@ import { BatchesTable } from "@/components/items/batches-table";
 import { BatchForm } from "@/components/items/batch-form";
 import { ChevronLeft, Pencil } from "lucide-react";
 
-export default async function ItemDetailPage({ params }: { params: { id: string } }) {
+export default async function ItemDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return null;
 
-  const item = await getItem(params.id);
+  const { id } = await params;
+  const item = await getItem(id);
   if (!item) notFound();
 
   const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: session.user.tenantId } });
