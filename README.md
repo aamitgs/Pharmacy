@@ -1,7 +1,8 @@
-# Pharmacy Billing — Phase 1 (Core Billing MVP)
+# Pharmacy Billing — Phases 1 & 2 (Core Billing + Purchase & Inventory)
 
 A GST-compliant, keyboard-first counter-billing system for a single-tenant
-retail pharmacy. This is Phase 1 of a larger multi-phase plan — see
+retail pharmacy, extended with the supply side: purchase orders, GRN
+(goods received), purchase returns, and a supplier ledger. See
 [Scope](#scope--whats-not-here) for what's deliberately out of scope for now.
 
 ## Stack
@@ -119,19 +120,53 @@ restore flow yet.
   are the reverse proxy's job — don't expose the app container directly to
   the internet without one.
 
+## Purchase & Inventory (Phase 2)
+
+Extends the Phase 1 billing flow with the supply side, without changing it:
+
+- **Suppliers** (`/suppliers`): name/GSTIN/address/payment-terms CRUD, plus a
+  detail view with a running ledger and an outstanding balance that's always
+  computed as `SUM(SupplierLedgerEntry.amount)` — never trusted from a cached
+  column. Manual payments can be recorded against a supplier (amount + note).
+- **Purchase orders** (`/purchase-orders`, optional): supplier + line items
+  (item/qty/rate), draft → sent → received/cancelled status. A PO is never
+  required before a GRN.
+- **GRN — goods received** (`/grn`): the main daily-use screen. A fast
+  repeated row-entry bar (item search → batch no. → mfg/expiry dates → MRP →
+  rate → qty) where Enter commits a row and moves to the next; mfg date,
+  expiry date, MRP, and rate carry forward between rows since a distributor
+  invoice often repeats them, while item/batch no./qty always clear. Past
+  expiry and MRP-below-rate show as inline non-blocking warnings, not
+  errors. Saving creates/updates the matching `Batch` (matched by item +
+  batch no.), increments its stock, writes a `SupplierLedgerEntry`, and — if
+  linked to a PO — marks it received. Stock is visible in the POS batch
+  picker immediately after saving.
+- **Purchase returns** (`/purchase-returns`): from a GRN's "Return items"
+  link or standalone. Select item + batch + qty + an overall reason;
+  decrements `Batch.currentQty` (rejected server-side if it exceeds current
+  stock) and writes a negative `SupplierLedgerEntry`. Detail view renders a
+  printable (A4) debit note.
+- **Alerts** (`/alerts`, linked from the dashboard): low-stock items (with
+  last purchase rate/supplier for reorder reference) and near-expiry/expired
+  batches, reusing the same `nearExpiryWindowDays` tenant setting Phase 1's
+  in-list badges use. Each low-stock row links directly into GRN entry,
+  pre-filled with that item.
+
 ## Scope / what's not here
 
-This is Phase 1 only. Deliberately out of scope (see the original build
-spec for the full list): multi-tenant signup/billing, purchase
-orders/GRN/supplier ledger, GST return filing (GSTR-1/3B) and e-invoicing,
-multi-branch transfers, scheme/loyalty discounts, cloud backup, Marg/Vyapar
-importers, Hospital Mode, white-labeling beyond the basic
-logo/color/footer fields, AI features, real payment gateway integration,
-and SMS/WhatsApp notifications. The CSV import pipeline
-(`src/lib/import/`) is structured in independent stages — parse → map →
-validate → commit — specifically so a platform-specific pre-parser could
-be dropped in ahead of `validate`/`commit` in a later phase without
-touching those two stages.
+Deliberately out of scope for Phases 1–2 (see the original build specs for
+the full lists): multi-tenant signup/billing, GST return filing
+(GSTR-1/3B) and e-invoicing/e-way bill, purchase scheme tracking (treated
+as a manual rate adjustment, not a modeled entity), landed cost
+calculation (GRN rate is a flat per-unit rate), multi-branch transfers,
+supplier payment gateway/bank integration (manual ledger entry only),
+scheme/loyalty discounts, cloud backup, Marg/Vyapar importers, Hospital
+Mode, white-labeling beyond the basic logo/color/footer fields, AI
+features, real payment gateway integration, and SMS/WhatsApp
+notifications. The CSV import pipeline (`src/lib/import/`) is structured
+in independent stages — parse → map → validate → commit — specifically so
+a platform-specific pre-parser could be dropped in ahead of
+`validate`/`commit` in a later phase without touching those two stages.
 
 ## Scripts
 
@@ -158,5 +193,6 @@ src/lib/billing.ts         Shared GST/discount math (client + server)
 src/lib/serialize.ts       Decimal -> number conversion for RSC boundaries
 src/components/pos/        The POS billing screen
 src/components/receipt/    Thermal (58/80mm) + A4 receipt renderer
+src/components/purchasing/ Supplier/PO/GRN/return forms and detail views
 src/lib/import/            CSV import pipeline (parse/map/validate stages)
 ```
