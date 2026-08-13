@@ -1,0 +1,613 @@
+// Pharmacy Management & Billing System — Phase 1
+// Every business table carries tenantId from day one so a later
+// multi-tenancy phase never requires a retrofit migration.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Tenant / Branch
+// ---------------------------------------------------------------------------
+
+model Tenant {
+  id                      String   @id @default(cuid())
+  pharmacyName            String
+  tenantType              String   @default("retail")
+  logoUrl                 String?
+  primaryColor            String?
+  invoiceFooterText       String?
+  // Staff discount cap: discounts above this % require a manager PIN override.
+  staffDiscountCapPercent Decimal  @default(10) @db.Decimal(5, 2)
+  managerPinHash          String?
+  nearExpiryWindowDays    Int      @default(90)
+  // Separate from nearExpiryWindowDays (batch stock expiry) — licence
+  // renewal lead time is a different business concern with its own
+  // sensible default.
+  licenseExpiryWindowDays Int      @default(60)
+  createdAt               DateTime @default(now())
+
+  branches      Branch[]
+  items         Item[]
+  customers     Customer[]
+  doctors       Doctor[]
+  salesInvoices SalesInvoice[]
+  discounts     Discount[]
+  users         User[]
+  auditLogs     AuditLog[]
+  backupLogs    BackupLog[]
+
+  suppliers             Supplier[]
+  purchaseOrders        PurchaseOrder[]
+  grns                  Grn[]
+  purchaseReturns       PurchaseReturn[]
+  supplierLedgerEntries SupplierLedgerEntry[]
+
+  narcoticRegisterEntries NarcoticRegisterEntry[]
+
+  @@map("tenants")
+}
+
+model Branch {
+  id                       String   @id @default(cuid())
+  tenantId                 String
+  name                     String
+  licensedAddress          String
+  gstin                    String?
+  pan                      String?
+  drugLicenseRetailNo      String?
+  drugLicenseWholesaleNo   String?
+  pharmacistName           String?
+  pharmacistRegistrationNo String?
+  narcoticLicenseNo        String?
+  fssaiNo                  String?
+  // Keyed by license type (retail, wholesale, narcotic, fssai) -> ISO date
+  // string. jsonb rather than one column per license so the Alerts screen's
+  // "renewals due soon" scan and the Settings form can both iterate it
+  // generically instead of hard-coding a column per license type.
+  licenseExpiryDates       Json?
+  createdAt                DateTime @default(now())
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  salesInvoices  SalesInvoice[]
+  purchaseOrders PurchaseOrder[]
+
+  narcoticRegisterEntries NarcoticRegisterEntry[]
+
+  @@index([tenantId])
+  @@map("branches")
+}
+
+// ---------------------------------------------------------------------------
+// Item / Batch master
+// ---------------------------------------------------------------------------
+
+enum ScheduleClass {
+  none
+  H
+  H1
+  X
+  G
+}
+
+model Item {
+  id            String        @id @default(cuid())
+  tenantId      String
+  name          String
+  genericName   String?
+  manufacturer  String?
+  composition   String?
+  scheduleClass ScheduleClass @default(none)
+  hsnCode       String?
+  taxRate       Decimal       @default(0) @db.Decimal(5, 2)
+  unit          String        @default("unit")
+  packSize      String?
+  reorderLevel  Int           @default(10)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  batches             Batch[]
+  salesInvoiceItems   SalesInvoiceItem[]
+  purchaseOrderItems  PurchaseOrderItem[]
+  grnItems            GrnItem[]
+  purchaseReturnItems PurchaseReturnItem[]
+
+  narcoticRegisterEntries NarcoticRegisterEntry[]
+
+  @@index([tenantId])
+  @@index([tenantId, name])
+  @@map("items")
+}
+
+model Batch {
+  id           String    @id @default(cuid())
+  itemId       String
+  batchNo      String
+  mfgDate      DateTime?
+  expiryDate   DateTime
+  mrp          Decimal   @db.Decimal(10, 2)
+  purchaseRate Decimal   @db.Decimal(10, 2)
+  saleRate     Decimal   @db.Decimal(10, 2)
+  currentQty   Int       @default(0)
+  rackLocation String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  item                Item                 @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  salesInvoiceItems   SalesInvoiceItem[]
+  grnItems            GrnItem[]
+  purchaseReturnItems PurchaseReturnItem[]
+
+  narcoticRegisterEntries NarcoticRegisterEntry[]
+
+  @@index([itemId])
+  @@index([itemId, expiryDate])
+  @@map("batches")
+}
+
+// ---------------------------------------------------------------------------
+// Customer / Doctor
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  name               String
+  phone              String?
+  creditLimit        Decimal? @db.Decimal(10, 2)
+  outstandingBalance Decimal  @default(0) @db.Decimal(10, 2)
+  createdAt          DateTime @default(now())
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  salesInvoices SalesInvoice[]
+
+  @@index([tenantId])
+  @@index([tenantId, phone])
+  @@map("customers")
+}
+
+model Doctor {
+  id             String   @id @default(cuid())
+  tenantId       String
+  name           String
+  registrationNo String?
+  clinicName     String?
+  createdAt      DateTime @default(now())
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  salesInvoices SalesInvoice[]
+
+  narcoticRegisterEntries NarcoticRegisterEntry[]
+
+  @@index([tenantId])
+  @@map("doctors")
+}
+
+// ---------------------------------------------------------------------------
+// Sales
+// ---------------------------------------------------------------------------
+
+enum PaymentMode {
+  cash
+  upi
+  card
+  credit
+}
+
+enum InvoiceStatus {
+  completed
+  cancelled
+}
+
+model SalesInvoice {
+  id                      String        @id @default(cuid())
+  tenantId                String
+  branchId                String
+  customerId              String?
+  doctorId                String?
+  patientName             String?
+  patientAge              Int?
+  invoiceNo               String
+  invoiceDate             DateTime      @default(now())
+  subtotal                Decimal       @db.Decimal(12, 2)
+  taxAmount               Decimal       @db.Decimal(12, 2)
+  discountAmount          Decimal       @default(0) @db.Decimal(12, 2)
+  total                   Decimal       @db.Decimal(12, 2)
+  paymentMode             PaymentMode
+  status                  InvoiceStatus @default(completed)
+  // Scan/photo of the physical prescription, attached for Schedule H/H1/X
+  // sales. Optional — capture is encouraged, not enforced, per spec.
+  prescriptionImageUrl    String?
+  // The specific Pharmacist-role user who electronically signed off on a
+  // regulated-drug dispense, separate from whichever Counter Staff user
+  // actually rang up the sale (session.user.id if a Pharmacist is at the
+  // till; the re-authenticating pharmacist's id otherwise). Null for
+  // invoices with no Schedule H/H1/X lines.
+  pharmacistSignoffUserId String?
+  pharmacistSignoffAt     DateTime?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch            Branch    @relation(fields: [branchId], references: [id])
+  customer          Customer? @relation(fields: [customerId], references: [id])
+  doctor            Doctor?   @relation(fields: [doctorId], references: [id])
+  pharmacistSignoff User?     @relation("SalesInvoicePharmacistSignoff", fields: [pharmacistSignoffUserId], references: [id])
+
+  items                   SalesInvoiceItem[]
+  discounts               Discount[]
+  narcoticRegisterEntries NarcoticRegisterEntry[]
+
+  @@unique([tenantId, invoiceNo])
+  @@index([tenantId, invoiceDate])
+  @@map("sales_invoices")
+}
+
+model SalesInvoiceItem {
+  id             String  @id @default(cuid())
+  invoiceId      String
+  itemId         String
+  batchId        String
+  qty            Int
+  rate           Decimal @db.Decimal(10, 2)
+  taxRate        Decimal @db.Decimal(5, 2)
+  discountAmount Decimal @default(0) @db.Decimal(10, 2)
+
+  invoice   SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  item      Item         @relation(fields: [itemId], references: [id])
+  batch     Batch        @relation(fields: [batchId], references: [id])
+  discounts Discount[]
+
+  @@index([invoiceId])
+  @@index([itemId])
+  @@index([batchId])
+  @@map("sales_invoice_items")
+}
+
+enum DiscountType {
+  item
+  bill
+}
+
+model Discount {
+  id               String       @id @default(cuid())
+  tenantId         String
+  invoiceId        String
+  invoiceItemId    String?
+  type             DiscountType
+  amountOrPercent  Decimal      @db.Decimal(10, 2)
+  isPercent        Boolean      @default(true)
+  appliedByUserId  String
+  approvedByUserId String?
+  createdAt        DateTime     @default(now())
+
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice     SalesInvoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceItem SalesInvoiceItem? @relation(fields: [invoiceItemId], references: [id])
+  appliedBy   User              @relation("DiscountAppliedBy", fields: [appliedByUserId], references: [id])
+  approvedBy  User?             @relation("DiscountApprovedBy", fields: [approvedByUserId], references: [id])
+
+  @@index([tenantId])
+  @@index([invoiceId])
+  @@map("discounts")
+}
+
+// ---------------------------------------------------------------------------
+// Users / Auth
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  owner
+  pharmacist
+  counter_staff
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String
+  name         String
+  email        String
+  role         UserRole
+  phone        String?
+  licenseNo    String?
+  passwordHash String
+  totpSecret   String?
+  totpEnabled  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant            Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  auditLogs         AuditLog[]
+  discountsApplied  Discount[] @relation("DiscountAppliedBy")
+  discountsApproved Discount[] @relation("DiscountApprovedBy")
+
+  purchaseOrdersCreated  PurchaseOrder[]  @relation("PurchaseOrderCreatedBy")
+  grnsReceived           Grn[]            @relation("GrnReceivedBy")
+  purchaseReturnsCreated PurchaseReturn[] @relation("PurchaseReturnCreatedBy")
+
+  salesInvoicesSignedOff   SalesInvoice[]          @relation("SalesInvoicePharmacistSignoff")
+  narcoticEntriesDispensed NarcoticRegisterEntry[] @relation("NarcoticEntryDispensedBy")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Audit / Backup
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  action    String
+  entity    String
+  entityId  String
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entity, entityId])
+  @@map("audit_logs")
+}
+
+enum BackupDestination {
+  local
+  manual
+}
+
+enum BackupStatus {
+  success
+  failed
+}
+
+model BackupLog {
+  id          String            @id @default(cuid())
+  tenantId    String
+  destination BackupDestination
+  status      BackupStatus
+  createdAt   DateTime          @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("backup_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Purchase & Inventory — Phase 2
+// ---------------------------------------------------------------------------
+
+model Supplier {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  name               String
+  gstin              String?
+  address            String?
+  paymentTermsDays   Int?
+  // Cached for convenience only — never written to directly by app code.
+  // The real balance is always SUM(SupplierLedgerEntry.amount) for this
+  // supplier (purchases positive, payments/returns negative); see
+  // src/lib/actions/suppliers.ts.
+  outstandingBalance Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt          DateTime @default(now())
+
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  purchaseOrders  PurchaseOrder[]
+  grns            Grn[]
+  purchaseReturns PurchaseReturn[]
+  ledgerEntries   SupplierLedgerEntry[]
+
+  @@index([tenantId])
+  @@index([tenantId, name])
+  @@map("suppliers")
+}
+
+enum PurchaseOrderStatus {
+  draft
+  sent
+  received
+  cancelled
+}
+
+model PurchaseOrder {
+  id              String              @id @default(cuid())
+  tenantId        String
+  branchId        String
+  supplierId      String
+  status          PurchaseOrderStatus @default(draft)
+  createdAt       DateTime            @default(now())
+  createdByUserId String
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  supplier  Supplier @relation(fields: [supplierId], references: [id])
+  createdBy User     @relation("PurchaseOrderCreatedBy", fields: [createdByUserId], references: [id])
+
+  items PurchaseOrderItem[]
+  grns  Grn[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              String  @id @default(cuid())
+  purchaseOrderId String
+  itemId          String
+  qty             Int
+  rate            Decimal @db.Decimal(10, 2)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  item          Item          @relation(fields: [itemId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@map("purchase_order_items")
+}
+
+model Grn {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  purchaseOrderId     String?
+  supplierId          String
+  supplierInvoiceNo   String
+  supplierInvoiceDate DateTime
+  receivedAt          DateTime @default(now())
+  receivedByUserId    String
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  supplier      Supplier       @relation(fields: [supplierId], references: [id])
+  receivedBy    User           @relation("GrnReceivedBy", fields: [receivedByUserId], references: [id])
+
+  items           GrnItem[]
+  purchaseReturns PurchaseReturn[]
+
+  @@index([tenantId])
+  @@index([tenantId, receivedAt])
+  @@index([purchaseOrderId])
+  @@map("grns")
+}
+
+model GrnItem {
+  id         String    @id @default(cuid())
+  grnId      String
+  itemId     String
+  // Set in the same transaction that creates/updates the Batch this row
+  // resulted in — a GrnItem never exists without its Batch being real.
+  batchId    String
+  batchNo    String
+  mfgDate    DateTime?
+  expiryDate DateTime
+  mrp        Decimal   @db.Decimal(10, 2)
+  rate       Decimal   @db.Decimal(10, 2)
+  qty        Int
+
+  grn   Grn   @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  item  Item  @relation(fields: [itemId], references: [id])
+  batch Batch @relation(fields: [batchId], references: [id])
+
+  @@index([grnId])
+  @@index([itemId])
+  @@map("grn_items")
+}
+
+model PurchaseReturn {
+  id              String   @id @default(cuid())
+  tenantId        String
+  grnId           String?
+  supplierId      String
+  returnDate      DateTime @default(now())
+  reason          String?
+  totalAmount     Decimal  @db.Decimal(12, 2)
+  createdByUserId String
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  grn       Grn?     @relation(fields: [grnId], references: [id])
+  supplier  Supplier @relation(fields: [supplierId], references: [id])
+  createdBy User     @relation("PurchaseReturnCreatedBy", fields: [createdByUserId], references: [id])
+
+  items PurchaseReturnItem[]
+
+  @@index([tenantId])
+  @@index([tenantId, returnDate])
+  @@index([grnId])
+  @@map("purchase_returns")
+}
+
+model PurchaseReturnItem {
+  id               String  @id @default(cuid())
+  purchaseReturnId String
+  itemId           String
+  batchId          String
+  qty              Int
+  rate             Decimal @db.Decimal(10, 2)
+
+  purchaseReturn PurchaseReturn @relation(fields: [purchaseReturnId], references: [id], onDelete: Cascade)
+  item           Item           @relation(fields: [itemId], references: [id])
+  batch          Batch          @relation(fields: [batchId], references: [id])
+
+  @@index([purchaseReturnId])
+  @@map("purchase_return_items")
+}
+
+enum SupplierLedgerEntryType {
+  purchase
+  payment
+  return
+}
+
+model SupplierLedgerEntry {
+  id            String                  @id @default(cuid())
+  tenantId      String
+  supplierId    String
+  type          SupplierLedgerEntryType
+  // Signed: purchases are positive (increase what we owe), payments and
+  // returns are negative (decrease what we owe). Outstanding balance for a
+  // supplier is simply SUM(amount) over their entries.
+  amount        Decimal                 @db.Decimal(12, 2)
+  referenceId   String?
+  referenceType String?
+  note          String?
+  createdAt     DateTime                @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([supplierId, createdAt])
+  @@map("supplier_ledger_entries")
+}
+
+// ---------------------------------------------------------------------------
+// Compliance — Phase 3
+// ---------------------------------------------------------------------------
+
+// Tamper-evident narcotic (Schedule X) dispense register. Insert-only at the
+// application level — no update/delete server actions exist for this model.
+// A correction is a second row with reversalOfId pointing at the original;
+// the original itself is never edited or removed.
+model NarcoticRegisterEntry {
+  id                String   @id @default(cuid())
+  tenantId          String
+  branchId          String
+  invoiceId         String
+  itemId            String
+  batchId           String
+  qty               Int
+  doctorId          String?
+  patientName       String?
+  dispensedByUserId String
+  dispensedAt       DateTime @default(now())
+  // Present only on a reversal row; points at the entry it corrects. Unique
+  // so an original can be reversed at most once.
+  reversalOfId      String?  @unique
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch      Branch       @relation(fields: [branchId], references: [id])
+  invoice     SalesInvoice @relation(fields: [invoiceId], references: [id])
+  item        Item         @relation(fields: [itemId], references: [id])
+  batch       Batch        @relation(fields: [batchId], references: [id])
+  doctor      Doctor?      @relation(fields: [doctorId], references: [id])
+  dispensedBy User         @relation("NarcoticEntryDispensedBy", fields: [dispensedByUserId], references: [id])
+
+  reversalOf NarcoticRegisterEntry? @relation("NarcoticEntryReversal", fields: [reversalOfId], references: [id])
+  reversedBy NarcoticRegisterEntry? @relation("NarcoticEntryReversal")
+
+  @@index([tenantId])
+  @@index([tenantId, dispensedAt])
+  @@index([invoiceId])
+  @@map("narcotic_register_entries")
+}
