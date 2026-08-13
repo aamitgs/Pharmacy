@@ -246,6 +246,25 @@ export async function completeSale(input: CompleteSaleInput) {
           `Stock for ${batch.item.name} (batch ${batch.batchNo}) changed — please review the cart and try again.`
         );
       }
+
+      if (batch.item.scheduleClass === "X") {
+        await tx.narcoticRegisterEntry.create({
+          data: {
+            tenantId,
+            branchId: parsed.branchId,
+            invoiceId: invoice.id,
+            itemId: line.itemId,
+            batchId: line.batchId,
+            qty: line.qty,
+            doctorId: parsed.doctorId || null,
+            patientName: parsed.patientName || null,
+            // TODO(prescription sign-off, Phase 3): once the pharmacist
+            // sign-off gate lands on this action, use the signed-off
+            // pharmacist's id here instead of whoever completed the sale.
+            dispensedByUserId: session.user.id,
+          },
+        });
+      }
     }
 
     if (parsed.billDiscount.value > 0) {
