@@ -1,4 +1,14 @@
-import type { Item, Batch, Customer, Supplier, SupplierLedgerEntry } from "@/generated/prisma/client";
+import type {
+  Item,
+  Batch,
+  Customer,
+  Supplier,
+  SupplierLedgerEntry,
+  PurchaseOrderItem,
+  GrnItem,
+  PurchaseReturn,
+  PurchaseReturnItem,
+} from "@/generated/prisma/client";
 
 // Prisma's Decimal is a class instance, not a plain object — it doesn't
 // survive the React Server Component serialization boundary (props passed
@@ -57,4 +67,28 @@ export type PlainSupplierLedgerEntry = Omit<SupplierLedgerEntry, "amount"> & {
 
 export function serializeSupplierLedgerEntry(entry: SupplierLedgerEntry): PlainSupplierLedgerEntry {
   return { ...entry, amount: Number(entry.amount) };
+}
+
+export type PlainPurchaseOrderItem = Omit<PurchaseOrderItem, "rate"> & { rate: number };
+
+export function serializePurchaseOrderItem(item: PurchaseOrderItem): PlainPurchaseOrderItem {
+  return { ...item, rate: Number(item.rate) };
+}
+
+export type PlainGrnItem = Omit<GrnItem, "mrp" | "rate"> & { mrp: number; rate: number };
+
+export function serializeGrnItem(item: GrnItem): PlainGrnItem {
+  return { ...item, mrp: Number(item.mrp), rate: Number(item.rate) };
+}
+
+export type PlainPurchaseReturn = Omit<PurchaseReturn, "totalAmount"> & { totalAmount: number };
+
+export function serializePurchaseReturn(ret: PurchaseReturn): PlainPurchaseReturn {
+  return { ...ret, totalAmount: Number(ret.totalAmount) };
+}
+
+export type PlainPurchaseReturnItem = Omit<PurchaseReturnItem, "rate"> & { rate: number };
+
+export function serializePurchaseReturnItem(item: PurchaseReturnItem): PlainPurchaseReturnItem {
+  return { ...item, rate: Number(item.rate) };
 }

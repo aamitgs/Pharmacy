@@ -13,6 +13,8 @@ import {
   Stethoscope,
   Receipt,
   Truck,
+  ClipboardList,
+  PackageCheck,
   Settings,
 } from "lucide-react";
 
@@ -28,6 +30,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/pos", label: "Billing", icon: ScanBarcode },
   { href: "/items", label: "Items & Batches", icon: Package },
   { href: "/suppliers", label: "Suppliers", icon: Truck },
+  { href: "/purchase-orders", label: "Purchase Orders", icon: ClipboardList },
+  { href: "/grn", label: "GRN", icon: PackageCheck },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/doctors", label: "Doctors", icon: Stethoscope },
   { href: "/invoices", label: "Sales Register", icon: Receipt },
