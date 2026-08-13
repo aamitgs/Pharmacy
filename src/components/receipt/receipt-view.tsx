@@ -54,10 +54,19 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
               {line.manufacturer ? ` (${line.manufacturer})` : ""}
             </div>
             <div className="flex justify-between text-[10px] text-neutral-600">
-              <span>Batch {line.batchNo}</span>
+              <span>
+                Batch {line.batchNo}
+                {line.hsnCode ? ` · HSN ${line.hsnCode}` : ""}
+              </span>
               {line.discountAmount > 0 && <span>Disc ₹{line.discountAmount.toFixed(2)}</span>}
-              <span>Tax {line.taxRate}%</span>
+              <span>GST {line.taxRate}%</span>
             </div>
+            {(line.cgstAmount > 0 || line.sgstAmount > 0) && (
+              <div className="flex justify-end gap-3 text-[10px] text-neutral-600">
+                <span>CGST ₹{line.cgstAmount.toFixed(2)}</span>
+                <span>SGST ₹{line.sgstAmount.toFixed(2)}</span>
+              </div>
+            )}
             <Row cols={[5, 1.5, 1.5, 2]}>
               <span />
               <span className="text-right tabular-nums">{line.qty}</span>
@@ -82,8 +91,12 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
           <span className="tabular-nums">−₹{data.discountAmount.toFixed(2)}</span>
         </div>
         <div className="flex justify-between">
-          <span>CGST + SGST</span>
-          <span className="tabular-nums">₹{data.taxAmount.toFixed(2)}</span>
+          <span>CGST</span>
+          <span className="tabular-nums">₹{(data.taxAmount / 2).toFixed(2)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span>SGST</span>
+          <span className="tabular-nums">₹{(data.taxAmount - data.taxAmount / 2).toFixed(2)}</span>
         </div>
         <div className="flex justify-between text-sm font-bold">
           <span>Total</span>

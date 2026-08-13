@@ -51,6 +51,10 @@ export async function getInvoiceForReceipt(id: string) {
       pharmacyName: tenant.pharmacyName,
       invoiceFooterText: tenant.invoiceFooterText,
     },
+    // Intra-state assumption (CGST = SGST = half the line's tax) matches the
+    // convention already established in src/lib/billing.ts's computeBilling
+    // — same split, just re-derived here for display since SalesInvoiceItem
+    // only stores the combined taxRate, not separate cgst/sgst columns.
     items: invoice.items.map((line) => {
       const qty = line.qty;
       const rate = Number(line.rate);
@@ -58,15 +62,20 @@ export async function getInvoiceForReceipt(id: string) {
       const taxRate = Number(line.taxRate);
       const taxableValue = qty * rate - discountAmount;
       const taxAmount = (taxableValue * taxRate) / 100;
+      const cgstAmount = taxAmount / 2;
+      const sgstAmount = taxAmount - cgstAmount;
       return {
         id: line.id,
         itemName: line.item.name,
         manufacturer: line.item.manufacturer,
+        hsnCode: line.item.hsnCode,
         batchNo: line.batch.batchNo,
         qty,
         rate,
         taxRate,
         discountAmount,
+        cgstAmount,
+        sgstAmount,
         lineTotal: taxableValue + taxAmount,
       };
     }),

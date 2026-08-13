@@ -18,6 +18,7 @@ import {
   Undo2,
   TriangleAlert,
   ShieldAlert,
+  FileSpreadsheet,
   Settings,
 } from "lucide-react";
 
@@ -44,6 +45,12 @@ const NAV_ITEMS: NavItem[] = [
     href: "/reports/narcotic-register",
     label: "Narcotic Register",
     icon: ShieldAlert,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/reports/hsn-summary",
+    label: "HSN Summary",
+    icon: FileSpreadsheet,
     roles: ["owner", "pharmacist"],
   },
   { href: "/settings", label: "Settings", icon: Settings },
