@@ -15,6 +15,7 @@ import {
   Truck,
   ClipboardList,
   PackageCheck,
+  Undo2,
   Settings,
 } from "lucide-react";
 
@@ -32,6 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/suppliers", label: "Suppliers", icon: Truck },
   { href: "/purchase-orders", label: "Purchase Orders", icon: ClipboardList },
   { href: "/grn", label: "GRN", icon: PackageCheck },
+  { href: "/purchase-returns", label: "Purchase Returns", icon: Undo2 },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/doctors", label: "Doctors", icon: Stethoscope },
   { href: "/invoices", label: "Sales Register", icon: Receipt },
