@@ -21,6 +21,7 @@ import {
   ShieldAlert,
   FileSpreadsheet,
   Building2,
+  ArrowLeftRight,
   Settings,
 } from "lucide-react";
 
@@ -40,6 +41,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/purchase-orders", label: "Purchase Orders", icon: ClipboardList },
   { href: "/grn", label: "GRN", icon: PackageCheck },
   { href: "/purchase-returns", label: "Purchase Returns", icon: Undo2 },
+  { href: "/transfers", label: "Stock Transfers", icon: ArrowLeftRight },
   {
     href: "/branches",
     label: "Branches",
