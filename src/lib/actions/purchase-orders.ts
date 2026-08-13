@@ -95,6 +95,14 @@ export async function createPurchaseOrder(input: PurchaseOrderInput) {
   const branch = await prisma.branch.findFirst({ where: { tenantId: session.user.tenantId } });
   if (!branch) throw new Error("No branch configured for this tenant");
 
+  const itemIds = [...new Set(parsed.items.map((i) => i.itemId))];
+  const ownedItemCount = await prisma.item.count({
+    where: { id: { in: itemIds }, tenantId: session.user.tenantId },
+  });
+  if (ownedItemCount !== itemIds.length) {
+    throw new Error("One of the items in this purchase order was not found");
+  }
+
   const po = await prisma.purchaseOrder.create({
     data: {
       tenantId: session.user.tenantId,
