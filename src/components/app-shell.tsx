@@ -16,6 +16,7 @@ import {
   ClipboardList,
   PackageCheck,
   Undo2,
+  TriangleAlert,
   Settings,
 } from "lucide-react";
 
@@ -28,6 +29,7 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/alerts", label: "Alerts", icon: TriangleAlert },
   { href: "/pos", label: "Billing", icon: ScanBarcode },
   { href: "/items", label: "Items & Batches", icon: Package },
   { href: "/suppliers", label: "Suppliers", icon: Truck },

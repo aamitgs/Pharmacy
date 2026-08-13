@@ -4,7 +4,7 @@ import { getDashboardData } from "@/lib/actions/dashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, Clock, PackageX, Receipt } from "lucide-react";
+import { AlertTriangle, Clock, IndianRupee, PackageX, Receipt } from "lucide-react";
 
 export default async function DashboardPage() {
   const data = await getDashboardData();
@@ -32,7 +32,7 @@ export default async function DashboardPage() {
         </Alert>
       )}
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -50,7 +50,7 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Link href="/items">
+        <Link href="/alerts">
           <Card className="transition-colors hover:bg-muted/40">
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -72,7 +72,7 @@ export default async function DashboardPage() {
           </Card>
         </Link>
 
-        <Link href="/items">
+        <Link href="/alerts">
           <Card className="transition-colors hover:bg-muted/40">
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -90,8 +90,30 @@ export default async function DashboardPage() {
                 {data.nearExpiryCount}
               </div>
               <p className="text-xs text-muted-foreground">
-                item{data.nearExpiryCount === 1 ? "" : "s"} expiring soon
+                batch{data.nearExpiryCount === 1 ? "" : "es"} expiring soon
               </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/suppliers">
+          <Card className="transition-colors hover:bg-muted/40">
+            <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Supplier outstanding
+              </CardTitle>
+              <IndianRupee className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div
+                className={cn(
+                  "text-2xl font-semibold tabular-nums",
+                  data.supplierOutstandingTotal > 0 && "text-destructive"
+                )}
+              >
+                ₹{data.supplierOutstandingTotal.toFixed(2)}
+              </div>
+              <p className="text-xs text-muted-foreground">owed across all suppliers</p>
             </CardContent>
           </Card>
         </Link>
