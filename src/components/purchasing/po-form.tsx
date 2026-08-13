@@ -125,7 +125,7 @@ export function PoForm({
               selectedItem={selectedItem}
               onSelect={(item) => {
                 setSelectedItem(item);
-                requestAnimationFrame(() => qtyRef.current?.focus());
+                qtyRef.current?.focus();
               }}
               onClear={() => setSelectedItem(null)}
               inputRef={itemRef}
