@@ -153,6 +153,15 @@ export async function completeSale(input: CompleteSaleInput) {
   const tenantId = session.user.tenantId;
   const parsed = completeSaleSchema.parse(input);
 
+  // The upload endpoint always writes under `<sessionTenantId>/<uuid>.<ext>`.
+  // Reject anything else so a client can't attach another tenant's
+  // prescription image path to an invoice on this tenant — the file-serving
+  // route trusts whichever invoice references a path, so this is the only
+  // place that ownership actually gets checked.
+  if (parsed.prescriptionImagePath && !parsed.prescriptionImagePath.startsWith(`${tenantId}/`)) {
+    throw new Error("Invalid prescription image reference.");
+  }
+
   const batchIds = parsed.lines.map((l) => l.batchId);
   const batches = await prisma.batch.findMany({
     where: { id: { in: batchIds }, item: { tenantId } },
