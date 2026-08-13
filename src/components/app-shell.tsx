@@ -53,6 +53,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: FileSpreadsheet,
     roles: ["owner", "pharmacist"],
   },
+  {
+    href: "/reports/gstr-export",
+    label: "GSTR-1 / 3B Export",
+    icon: FileSpreadsheet,
+    roles: ["owner", "pharmacist"],
+  },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
