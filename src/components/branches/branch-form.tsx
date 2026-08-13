@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
 import { createBranch, updateBranch } from "@/lib/actions/branches";
 import type { LicenseType } from "@/lib/license-types";
 
@@ -28,9 +29,13 @@ const formSchema = z.object({
   wholesaleExpiry: z.string().optional(),
   narcoticExpiry: z.string().optional(),
   fssaiExpiry: z.string().optional(),
+  einvoiceEnabled: z.boolean().default(false),
+  ewayBillThreshold: z.coerce.number().min(0),
 });
 
-type FormValues = z.infer<typeof formSchema>;
+// See item-form.tsx for why input/output types are split (zod v4 coerce).
+type FormValues = z.input<typeof formSchema>;
+type FormOutput = z.output<typeof formSchema>;
 
 export interface BranchDetail {
   id: string;
@@ -45,13 +50,15 @@ export interface BranchDetail {
   pharmacistName: string | null;
   pharmacistRegistrationNo: string | null;
   licenseExpiryDates: Partial<Record<LicenseType, string>>;
+  einvoiceEnabled: boolean;
+  ewayBillThreshold: number;
 }
 
 export function BranchForm({ branch }: { branch?: BranchDetail }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  const form = useForm<FormValues>({
+  const form = useForm<FormValues, unknown, FormOutput>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: branch?.name ?? "",
@@ -68,10 +75,12 @@ export function BranchForm({ branch }: { branch?: BranchDetail }) {
       wholesaleExpiry: branch?.licenseExpiryDates.wholesale ?? "",
       narcoticExpiry: branch?.licenseExpiryDates.narcotic ?? "",
       fssaiExpiry: branch?.licenseExpiryDates.fssai ?? "",
+      einvoiceEnabled: branch?.einvoiceEnabled ?? false,
+      ewayBillThreshold: branch?.ewayBillThreshold ?? 50000,
     },
   });
 
-  function onSubmit(values: FormValues) {
+  function onSubmit(values: FormOutput) {
     startTransition(async () => {
       try {
         const payload = {
@@ -91,6 +100,8 @@ export function BranchForm({ branch }: { branch?: BranchDetail }) {
             narcotic: values.narcoticExpiry,
             fssai: values.fssaiExpiry,
           },
+          einvoiceEnabled: values.einvoiceEnabled,
+          ewayBillThreshold: values.ewayBillThreshold,
         };
         if (branch) {
           await updateBranch(branch.id, payload);
@@ -163,6 +174,26 @@ export function BranchForm({ branch }: { branch?: BranchDetail }) {
           <Label className="col-span-2 -mb-2 text-xs text-muted-foreground">FSSAI registration</Label>
           <Input placeholder="Registration no." {...form.register("fssaiNo")} />
           <Input type="date" {...form.register("fssaiExpiry")} />
+        </div>
+      </div>
+
+      <Separator />
+
+      <div className="space-y-4">
+        <h2 className="text-sm font-medium">GST e-invoice &amp; e-way bill</h2>
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={form.watch("einvoiceEnabled")}
+            onCheckedChange={(v) => form.setValue("einvoiceEnabled", !!v)}
+          />
+          E-invoicing applicable for this branch
+        </label>
+        <div className="max-w-xs space-y-1.5">
+          <Label htmlFor="ewayBillThreshold">E-way bill value threshold (₹)</Label>
+          <Input id="ewayBillThreshold" type="number" min={0} step="0.01" {...form.register("ewayBillThreshold")} />
+          <p className="text-xs text-muted-foreground">
+            Sales and GRNs at or above this value auto-attempt e-way bill generation.
+          </p>
         </div>
       </div>
 

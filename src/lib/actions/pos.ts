@@ -19,6 +19,7 @@ import { applySchemes } from "@/lib/scheme-engine";
 import { listActiveSchemesForBilling } from "@/lib/actions/schemes";
 import { validateCoupon } from "@/lib/actions/coupons";
 import { computeCustomerOutstandingBalances } from "@/lib/actions/customers";
+import { runEinvoiceAttempt, runEwayBillAttemptForInvoice } from "@/lib/gsp/engine";
 
 const REQUIRES_PRESCRIPTION: readonly string[] = ["H", "H1", "X"];
 
@@ -538,6 +539,15 @@ export async function completeSale(input: CompleteSaleInput) {
   revalidatePath("/invoices");
   revalidatePath("/dashboard");
   revalidatePath("/customers");
+
+  // Fire-and-forget: the counter transaction (sale saved, ready to print)
+  // is already complete and its response about to return. A slow or down
+  // GSP must never add latency here — this keeps running on the same
+  // long-lived Node process after the response is sent, and any failure is
+  // swallowed (retryable later from the receipt screen), never surfaced as
+  // a checkout error.
+  void runEinvoiceAttempt(result.id).catch(() => {});
+  void runEwayBillAttemptForInvoice(result.id).catch(() => {});
 
   return { invoiceId: result.id, invoiceNo: result.invoiceNo };
 }

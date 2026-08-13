@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ReceiptView } from "./receipt-view";
 import { SendWhatsAppButton } from "@/components/whatsapp/send-whatsapp-button";
+import { EinvoiceActions } from "@/components/einvoice/einvoice-actions";
 import { sendReceiptWhatsApp } from "@/lib/actions/whatsapp";
 import type { ReceiptData } from "@/lib/actions/invoices";
 import { ChevronLeft, Printer, FileImage } from "lucide-react";
@@ -66,6 +67,14 @@ export function ReceiptPageClient({ data }: { data: ReceiptData }) {
           <SendWhatsAppButton
             defaultPhone={data.customer?.phone ?? null}
             onSend={(phone) => sendReceiptWhatsApp(data.id, phone)}
+          />
+          <EinvoiceActions
+            invoiceId={data.id}
+            einvoiceEnabled={data.einvoiceEnabled}
+            hasIrn={!!data.einvoiceIrn}
+            total={data.total}
+            ewayBillThreshold={data.ewayBillThreshold}
+            hasEwayBill={!!data.ewayBillNo}
           />
         </div>
       </div>

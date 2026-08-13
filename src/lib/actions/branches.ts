@@ -35,6 +35,8 @@ const branchFieldsSchema = z.object({
       fssai: z.string().optional(),
     })
     .optional(),
+  einvoiceEnabled: z.boolean().default(false),
+  ewayBillThreshold: z.coerce.number().min(0).default(50000),
 });
 
 export type BranchFieldsInput = z.infer<typeof branchFieldsSchema>;
@@ -61,6 +63,8 @@ export async function createBranch(input: BranchFieldsInput) {
       pharmacistName: parsed.pharmacistName || null,
       pharmacistRegistrationNo: parsed.pharmacistRegistrationNo || null,
       licenseExpiryDates: cleanExpiryDates ?? {},
+      einvoiceEnabled: parsed.einvoiceEnabled,
+      ewayBillThreshold: parsed.ewayBillThreshold,
     },
   });
 
@@ -98,6 +102,8 @@ export async function getBranch(branchId: string) {
     pharmacistName: branch.pharmacistName,
     pharmacistRegistrationNo: branch.pharmacistRegistrationNo,
     licenseExpiryDates: expiryDates,
+    einvoiceEnabled: branch.einvoiceEnabled,
+    ewayBillThreshold: Number(branch.ewayBillThreshold),
   };
 }
 
@@ -141,6 +147,8 @@ export async function updateBranch(branchId: string, input: BranchFieldsInput) {
       pharmacistName: parsed.pharmacistName || null,
       pharmacistRegistrationNo: parsed.pharmacistRegistrationNo || null,
       licenseExpiryDates: cleanExpiryDates,
+      einvoiceEnabled: parsed.einvoiceEnabled,
+      ewayBillThreshold: parsed.ewayBillThreshold,
     },
   });
 

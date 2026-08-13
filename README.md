@@ -226,6 +226,25 @@ Extends the Phase 1 billing flow with the supply side, without changing it:
   image to a WhatsApp message yet. Adding one (headless rendering + hosting
   the resulting file for Gupshup's document-message API) is a real,
   reasonably-sized follow-up, not something faked here.
+- **E-invoice (IRN) & e-way bill generation**: against a GSP (GST Suvidha
+  Provider) API compatible with the NIC IRP schema most Indian GSPs
+  (ClearTax, MasterGST, Cygnet) wrap — set `GSP_BASE_URL`, `GSP_API_KEY`,
+  and `GSP_SELLER_GSTIN` (see `.env.example`) once a provider account is
+  provisioned; unset, generation attempts report "not configured".
+  E-invoicing is gated by a per-branch `einvoiceEnabled` toggle
+  (Branch edit screen) standing in for the turnover-threshold check, since
+  that threshold is government policy that changes over time, not a
+  constant to hardcode. E-way bill generation is gated by a configurable
+  per-branch value threshold (`ewayBillThreshold`, default ₹50,000) — value
+  only; distance-based thresholds aren't implemented since nothing in this
+  app calculates distance (no geocoding). Both calls are fire-and-forget
+  after the sale/GRN transaction already committed — never awaited by the
+  checkout or GRN-save response — so a slow or down GSP adds zero latency
+  to the counter. A failed attempt leaves the IRN/e-way bill number null;
+  a "Generate e-invoice" / "Generate e-way bill" button appears on the
+  receipt (and GRN detail) screen to retry manually. A successful IRN
+  renders as a QR code (via the `qrcode` package, same one used for MFA
+  setup) directly on the printed receipt.
 
 ## Scope / what's not here
 
