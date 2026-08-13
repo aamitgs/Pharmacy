@@ -44,6 +44,8 @@ model Tenant {
   purchaseReturns       PurchaseReturn[]
   supplierLedgerEntries SupplierLedgerEntry[]
 
+  narcoticRegisterEntries NarcoticRegisterEntry[]
+
   @@map("tenants")
 }
 
@@ -58,11 +60,20 @@ model Branch {
   drugLicenseWholesaleNo   String?
   pharmacistName           String?
   pharmacistRegistrationNo String?
+  narcoticLicenseNo        String?
+  fssaiNo                  String?
+  // Keyed by license type (retail, wholesale, narcotic, fssai) -> ISO date
+  // string. jsonb rather than one column per license so the Alerts screen's
+  // "renewals due soon" scan and the Settings form can both iterate it
+  // generically instead of hard-coding a column per license type.
+  licenseExpiryDates       Json?
   createdAt                DateTime @default(now())
 
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   salesInvoices  SalesInvoice[]
   purchaseOrders PurchaseOrder[]
+
+  narcoticRegisterEntries NarcoticRegisterEntry[]
 
   @@index([tenantId])
   @@map("branches")
@@ -103,6 +114,8 @@ model Item {
   grnItems            GrnItem[]
   purchaseReturnItems PurchaseReturnItem[]
 
+  narcoticRegisterEntries NarcoticRegisterEntry[]
+
   @@index([tenantId])
   @@index([tenantId, name])
   @@map("items")
@@ -126,6 +139,8 @@ model Batch {
   salesInvoiceItems   SalesInvoiceItem[]
   grnItems            GrnItem[]
   purchaseReturnItems PurchaseReturnItem[]
+
+  narcoticRegisterEntries NarcoticRegisterEntry[]
 
   @@index([itemId])
   @@index([itemId, expiryDate])
@@ -164,6 +179,8 @@ model Doctor {
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   salesInvoices SalesInvoice[]
 
+  narcoticRegisterEntries NarcoticRegisterEntry[]
+
   @@index([tenantId])
   @@map("doctors")
 }
@@ -185,31 +202,43 @@ enum InvoiceStatus {
 }
 
 model SalesInvoice {
-  id             String        @id @default(cuid())
-  tenantId       String
-  branchId       String
-  customerId     String?
-  doctorId       String?
-  patientName    String?
-  patientAge     Int?
-  invoiceNo      String
-  invoiceDate    DateTime      @default(now())
-  subtotal       Decimal       @db.Decimal(12, 2)
-  taxAmount      Decimal       @db.Decimal(12, 2)
-  discountAmount Decimal       @default(0) @db.Decimal(12, 2)
-  total          Decimal       @db.Decimal(12, 2)
-  paymentMode    PaymentMode
-  status         InvoiceStatus @default(completed)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  id                      String        @id @default(cuid())
+  tenantId                String
+  branchId                String
+  customerId              String?
+  doctorId                String?
+  patientName             String?
+  patientAge              Int?
+  invoiceNo               String
+  invoiceDate             DateTime      @default(now())
+  subtotal                Decimal       @db.Decimal(12, 2)
+  taxAmount               Decimal       @db.Decimal(12, 2)
+  discountAmount          Decimal       @default(0) @db.Decimal(12, 2)
+  total                   Decimal       @db.Decimal(12, 2)
+  paymentMode             PaymentMode
+  status                  InvoiceStatus @default(completed)
+  // Scan/photo of the physical prescription, attached for Schedule H/H1/X
+  // sales. Optional — capture is encouraged, not enforced, per spec.
+  prescriptionImageUrl    String?
+  // The specific Pharmacist-role user who electronically signed off on a
+  // regulated-drug dispense, separate from whichever Counter Staff user
+  // actually rang up the sale (session.user.id if a Pharmacist is at the
+  // till; the re-authenticating pharmacist's id otherwise). Null for
+  // invoices with no Schedule H/H1/X lines.
+  pharmacistSignoffUserId String?
+  pharmacistSignoffAt     DateTime?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch   Branch    @relation(fields: [branchId], references: [id])
-  customer Customer? @relation(fields: [customerId], references: [id])
-  doctor   Doctor?   @relation(fields: [doctorId], references: [id])
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch            Branch    @relation(fields: [branchId], references: [id])
+  customer          Customer? @relation(fields: [customerId], references: [id])
+  doctor            Doctor?   @relation(fields: [doctorId], references: [id])
+  pharmacistSignoff User?     @relation("SalesInvoicePharmacistSignoff", fields: [pharmacistSignoffUserId], references: [id])
 
-  items     SalesInvoiceItem[]
-  discounts Discount[]
+  items                   SalesInvoiceItem[]
+  discounts               Discount[]
+  narcoticRegisterEntries NarcoticRegisterEntry[]
 
   @@unique([tenantId, invoiceNo])
   @@index([tenantId, invoiceDate])
@@ -297,6 +326,9 @@ model User {
   purchaseOrdersCreated  PurchaseOrder[]  @relation("PurchaseOrderCreatedBy")
   grnsReceived           Grn[]            @relation("GrnReceivedBy")
   purchaseReturnsCreated PurchaseReturn[] @relation("PurchaseReturnCreatedBy")
+
+  salesInvoicesSignedOff   SalesInvoice[]          @relation("SalesInvoicePharmacistSignoff")
+  narcoticEntriesDispensed NarcoticRegisterEntry[] @relation("NarcoticEntryDispensedBy")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -533,4 +565,45 @@ model SupplierLedgerEntry {
   @@index([tenantId])
   @@index([supplierId, createdAt])
   @@map("supplier_ledger_entries")
+}
+
+// ---------------------------------------------------------------------------
+// Compliance — Phase 3
+// ---------------------------------------------------------------------------
+
+// Tamper-evident narcotic (Schedule X) dispense register. Insert-only at the
+// application level — no update/delete server actions exist for this model.
+// A correction is a second row with reversalOfId pointing at the original;
+// the original itself is never edited or removed.
+model NarcoticRegisterEntry {
+  id                String   @id @default(cuid())
+  tenantId          String
+  branchId          String
+  invoiceId         String
+  itemId            String
+  batchId           String
+  qty               Int
+  doctorId          String?
+  patientName       String?
+  dispensedByUserId String
+  dispensedAt       DateTime @default(now())
+  // Present only on a reversal row; points at the entry it corrects. Unique
+  // so an original can be reversed at most once.
+  reversalOfId      String?  @unique
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch      Branch       @relation(fields: [branchId], references: [id])
+  invoice     SalesInvoice @relation(fields: [invoiceId], references: [id])
+  item        Item         @relation(fields: [itemId], references: [id])
+  batch       Batch        @relation(fields: [batchId], references: [id])
+  doctor      Doctor?      @relation(fields: [doctorId], references: [id])
+  dispensedBy User         @relation("NarcoticEntryDispensedBy", fields: [dispensedByUserId], references: [id])
+
+  reversalOf NarcoticRegisterEntry? @relation("NarcoticEntryReversal", fields: [reversalOfId], references: [id])
+  reversedBy NarcoticRegisterEntry? @relation("NarcoticEntryReversal")
+
+  @@index([tenantId])
+  @@index([tenantId, dispensedAt])
+  @@index([invoiceId])
+  @@map("narcotic_register_entries")
 }
