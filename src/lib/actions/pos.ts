@@ -18,6 +18,7 @@ import { resolveConcreteBranch } from "@/lib/branch-scope";
 import { applySchemes } from "@/lib/scheme-engine";
 import { listActiveSchemesForBilling } from "@/lib/actions/schemes";
 import { validateCoupon } from "@/lib/actions/coupons";
+import { computeCustomerOutstandingBalances } from "@/lib/actions/customers";
 
 const REQUIRES_PRESCRIPTION: readonly string[] = ["H", "H1", "X"];
 
@@ -46,6 +47,8 @@ export async function getPosData() {
     listActiveSchemesForBilling(tenantId),
   ]);
 
+  const balances = await computeCustomerOutstandingBalances(tenantId, customers.map((c) => c.id));
+
   return {
     items: items.map((item) => ({
       ...serializeItem(item),
@@ -56,7 +59,7 @@ export async function getPosData() {
       name: c.name,
       phone: c.phone,
       creditLimit: c.creditLimit ? Number(c.creditLimit) : null,
-      outstandingBalance: Number(c.outstandingBalance),
+      outstandingBalance: balances.get(c.id) ?? 0,
       loyaltyTierName: c.loyaltyTier?.name ?? null,
       loyaltyDiscountPercent: c.loyaltyTier ? Number(c.loyaltyTier.discountPercent) : 0,
     })),
@@ -489,11 +492,21 @@ export async function completeSale(input: CompleteSaleInput) {
     if (parsed.customerId) {
       const updated = await tx.customer.update({
         where: { id: parsed.customerId },
-        data: {
-          cumulativeSpend: { increment: billing.total },
-          ...(parsed.paymentMode === "credit" ? { outstandingBalance: { increment: billing.total } } : {}),
-        },
+        data: { cumulativeSpend: { increment: billing.total } },
       });
+
+      if (parsed.paymentMode === "credit") {
+        await tx.customerLedgerEntry.create({
+          data: {
+            tenantId,
+            customerId: parsed.customerId,
+            type: "sale",
+            amount: billing.total,
+            referenceId: invoice.id,
+            referenceType: "SalesInvoice",
+          },
+        });
+      }
 
       const tiers = await tx.loyaltyTier.findMany({
         where: { tenantId },

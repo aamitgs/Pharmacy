@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { listCustomers } from "@/lib/actions/customers";
 import { CustomerForm } from "@/components/customers/customer-form";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +33,11 @@ export default async function CustomersPage() {
             {customers.length ? (
               customers.map((c) => (
                 <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link href={`/customers/${c.id}`} className="hover:underline">
+                      {c.name}
+                    </Link>
+                  </TableCell>
                   <TableCell>{c.phone || "—"}</TableCell>
                   <TableCell>
                     {c.creditLimit !== null ? (

@@ -55,6 +55,8 @@ model Tenant {
   loyaltyTiers LoyaltyTier[]
   coupons      Coupon[]
 
+  customerLedgerEntries CustomerLedgerEntry[]
+
   @@map("tenants")
 }
 
@@ -176,12 +178,16 @@ model Batch {
 // ---------------------------------------------------------------------------
 
 model Customer {
-  id                 String   @id @default(cuid())
-  tenantId           String
-  name               String
-  phone              String?
-  creditLimit        Decimal? @db.Decimal(10, 2)
-  outstandingBalance Decimal  @default(0) @db.Decimal(10, 2)
+  id            String   @id @default(cuid())
+  tenantId      String
+  name          String
+  phone         String?
+  creditLimit   Decimal? @db.Decimal(10, 2)
+  // Cached for convenience only — never written to directly by app code.
+  // The real balance is always SUM(CustomerLedgerEntry.amount) for this
+  // customer (credit sales positive, payments negative); see
+  // src/lib/actions/customers.ts.
+  outstandingBalance Decimal @default(0) @db.Decimal(12, 2)
   // Loyalty tier is computed/reassigned automatically whenever
   // cumulativeSpend crosses a tier threshold (see resolveLoyaltyTier in
   // src/lib/actions/pos.ts) — never set directly through a form.
@@ -189,14 +195,42 @@ model Customer {
   cumulativeSpend    Decimal  @default(0) @db.Decimal(12, 2)
   createdAt          DateTime @default(now())
 
-  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  loyaltyTier   LoyaltyTier?   @relation(fields: [loyaltyTierId], references: [id])
+  tenant        Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  loyaltyTier   LoyaltyTier?          @relation(fields: [loyaltyTierId], references: [id])
   salesInvoices SalesInvoice[]
+  ledgerEntries CustomerLedgerEntry[]
 
   @@index([tenantId])
   @@index([tenantId, phone])
   @@index([loyaltyTierId])
   @@map("customers")
+}
+
+enum CustomerLedgerEntryType {
+  sale
+  payment
+}
+
+model CustomerLedgerEntry {
+  id       String                   @id @default(cuid())
+  tenantId String
+  customerId String
+  type     CustomerLedgerEntryType
+  // Signed: credit sales are positive (increase what they owe), payments
+  // are negative (decrease what they owe). Outstanding balance for a
+  // customer is simply SUM(amount) over their entries.
+  amount        Decimal  @db.Decimal(12, 2)
+  referenceId   String?
+  referenceType String?
+  note          String?
+  createdAt     DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([customerId, createdAt])
+  @@map("customer_ledger_entries")
 }
 
 enum SchemeType {

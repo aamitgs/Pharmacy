@@ -2,6 +2,7 @@ import type {
   Item,
   Batch,
   Customer,
+  CustomerLedgerEntry,
   Supplier,
   SupplierLedgerEntry,
   PurchaseOrderItem,
@@ -36,6 +37,10 @@ export function serializeBatch(batch: Batch): PlainBatch {
   };
 }
 
+// Customer.outstandingBalance is a cache column only — callers must
+// overwrite it with a ledger-summed value (see computeCustomerOutstandingBalances
+// in src/lib/actions/customers.ts) before this reaches the client, never
+// trust the raw column.
 export type PlainCustomer = Omit<Customer, "creditLimit" | "outstandingBalance"> & {
   creditLimit: number | null;
   outstandingBalance: number;
@@ -47,6 +52,14 @@ export function serializeCustomer(customer: Customer): PlainCustomer {
     creditLimit: customer.creditLimit ? Number(customer.creditLimit) : null,
     outstandingBalance: Number(customer.outstandingBalance),
   };
+}
+
+export type PlainCustomerLedgerEntry = Omit<CustomerLedgerEntry, "amount"> & {
+  amount: number;
+};
+
+export function serializeCustomerLedgerEntry(entry: CustomerLedgerEntry): PlainCustomerLedgerEntry {
+  return { ...entry, amount: Number(entry.amount) };
 }
 
 // Supplier.outstandingBalance is a cache column only — callers must overwrite
