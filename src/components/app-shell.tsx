@@ -50,7 +50,25 @@ const NAV_ITEMS: NavItem[] = [
   },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/doctors", label: "Doctors", icon: Stethoscope },
-  { href: "/invoices", label: "Sales Register", icon: Receipt },
+  { href: "/invoices", label: "Invoices", icon: Receipt },
+  {
+    href: "/reports/sales-register",
+    label: "Sales Register",
+    icon: FileSpreadsheet,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/reports/purchase-register",
+    label: "Purchase Register",
+    icon: FileSpreadsheet,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/reports/stock-ledger",
+    label: "Stock Ledger",
+    icon: FileSpreadsheet,
+    roles: ["owner", "pharmacist"],
+  },
   {
     href: "/reports/narcotic-register",
     label: "Narcotic Register",
