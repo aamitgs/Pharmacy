@@ -97,6 +97,12 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["owner", "pharmacist"],
   },
   {
+    href: "/reports/discounts",
+    label: "Discount Report",
+    icon: FileSpreadsheet,
+    roles: ["owner", "pharmacist"],
+  },
+  {
     href: "/reports/movers",
     label: "Fast / Slow Movers",
     icon: FileSpreadsheet,

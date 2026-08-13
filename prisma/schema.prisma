@@ -377,8 +377,15 @@ model Discount {
   invoiceId        String
   invoiceItemId    String?
   type             DiscountType
+  // The rate as entered/configured — a percent or a flat rupee value per
+  // isPercent. Kept for audit ("what was typed/configured"), but NOT the
+  // actual rupee amount applied (which can differ after capping when
+  // multiple bill-level discounts stack) — use `amount` for that.
   amountOrPercent  Decimal      @db.Decimal(10, 2)
   isPercent        Boolean      @default(true)
+  // The actual rupee amount this discount contributed to the sale, after
+  // any stacking/capping — what the discount report sums.
+  amount           Decimal      @default(0) @db.Decimal(10, 2)
   // Set only when type is "scheme" / "coupon" respectively — links the
   // discount row back to the offer that produced it, for reporting.
   schemeId         String?

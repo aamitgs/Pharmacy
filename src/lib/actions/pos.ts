@@ -366,6 +366,7 @@ export async function completeSale(input: CompleteSaleInput) {
             type: "item",
             amountOrPercent: line.discountPercent,
             isPercent: true,
+            amount: lineBilling.itemDiscountAmount,
             appliedByUserId: session.user.id,
           },
         });
@@ -382,6 +383,7 @@ export async function completeSale(input: CompleteSaleInput) {
             schemeId: schemeApplied.schemeId,
             amountOrPercent: lineBilling.schemeDiscountAmount,
             isPercent: false,
+            amount: lineBilling.schemeDiscountAmount,
             appliedByUserId: session.user.id,
           },
         });
@@ -426,6 +428,7 @@ export async function completeSale(input: CompleteSaleInput) {
           type: "bill",
           amountOrPercent: parsed.billDiscount.value,
           isPercent: parsed.billDiscount.isPercent,
+          amount: billing.billDiscounts.find((d) => d.type === "bill")?.amount ?? 0,
           appliedByUserId: session.user.id,
         },
       });
@@ -439,6 +442,7 @@ export async function completeSale(input: CompleteSaleInput) {
           type: "loyalty",
           amountOrPercent: customer.loyaltyTier.discountPercent,
           isPercent: true,
+          amount: billing.billDiscounts.find((d) => d.type === "loyalty")?.amount ?? 0,
           appliedByUserId: session.user.id,
         },
       });
@@ -476,6 +480,7 @@ export async function completeSale(input: CompleteSaleInput) {
           couponId: coupon.id,
           amountOrPercent: coupon.value,
           isPercent: coupon.type === "percent",
+          amount: billing.billDiscounts.find((d) => d.type === "coupon")?.amount ?? 0,
           appliedByUserId: session.user.id,
         },
       });
