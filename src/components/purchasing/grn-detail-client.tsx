@@ -26,7 +26,7 @@ export type GrnDetail = {
   }[];
 };
 
-export function GrnDetailClient({ grn }: { grn: GrnDetail }) {
+export function GrnDetailClient({ grn, canEdit }: { grn: GrnDetail; canEdit: boolean }) {
   const total = grn.items.reduce((sum, i) => sum + i.qty * i.rate, 0);
 
   return (
@@ -46,11 +46,13 @@ export function GrnDetailClient({ grn }: { grn: GrnDetail }) {
               <Link href={`/purchase-orders/${grn.purchaseOrderId}`}>View linked PO</Link>
             </Button>
           )}
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/purchase-returns/new?supplierId=${grn.supplier.id}&grnId=${grn.id}`}>
-              Return items
-            </Link>
-          </Button>
+          {canEdit && (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/purchase-returns/new?supplierId=${grn.supplier.id}&grnId=${grn.id}`}>
+                Return items
+              </Link>
+            </Button>
+          )}
           <Button size="sm" onClick={() => window.print()}>
             <Printer className="h-4 w-4" /> Print
           </Button>
