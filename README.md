@@ -245,6 +245,32 @@ Extends the Phase 1 billing flow with the supply side, without changing it:
   receipt (and GRN detail) screen to retry manually. A successful IRN
   renders as a QR code (via the `qrcode` package, same one used for MFA
   setup) directly on the printed receipt.
+- **Offline-first POS billing**: scoped specifically to the billing screen
+  and printing, not the whole app. A `navigator.onLine`-plus-real-ping
+  check (`/api/health`) drives a persistent, unmissable status bar — never
+  a dismissible toast — showing "Offline — N bills pending sync." While
+  offline, item search keeps working off the already-loaded catalog
+  (backed by an IndexedDB cache, via Dexie, refreshed on load and every 3
+  minutes while online, so a long-open tab survives a reload mid-shift
+  too), and completing a sale writes it to an IndexedDB queue instead of
+  calling the server, immediately showing a locally-rendered, printable
+  receipt built entirely from client-side state — no round-trip. On
+  reconnection the queue replays automatically, in order, against the same
+  `completeSale` action used online (idempotent via a client-generated
+  `offlineClientId`, so a retried sync can't double-bill); a batch sold
+  below available stock by another terminal in the meantime surfaces as a
+  distinct "conflict" in the queue panel for manual reconciliation, never
+  silently oversold or dropped. **Deliberately blocked while offline**
+  (each needs a real-time server check that can't be safely approximated
+  from cached state): credit-mode sales (ledger validation), a discount
+  above the staff cap (manager PIN verification), and prescription sales
+  for non-pharmacist/owner roles (pharmacist re-auth) — each shows a clear
+  inline reason rather than silently failing or behaving unsafely. Live-
+  verified end to end via Playwright with `context.setOffline()`: item
+  search and cart entry while offline, the offline receipt overlay,
+  automatic sync on reconnection, and a real stock-conflict surfaced
+  correctly (one of two queued sales for the same nearly-out-of-stock
+  batch synced, the other flagged, stock never went negative).
 
 ## Scope / what's not here
 

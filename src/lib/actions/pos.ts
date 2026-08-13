@@ -31,7 +31,7 @@ export async function getPosData() {
   // branches" (Owner's consolidated view is for reporting, not billing).
   const branchId = await resolveConcreteBranch(tenantId, session.user.role);
 
-  const [items, customers, doctors, tenant, schemes] = await Promise.all([
+  const [items, customers, doctors, tenant, schemes, branch] = await Promise.all([
     prisma.item.findMany({
       where: { tenantId, batches: { some: { branchId: branchId ?? undefined, currentQty: { gt: 0 } } } },
       include: {
@@ -46,6 +46,7 @@ export async function getPosData() {
     prisma.doctor.findMany({ where: { tenantId }, orderBy: { name: "asc" } }),
     prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } }),
     listActiveSchemesForBilling(tenantId),
+    branchId ? prisma.branch.findUnique({ where: { id: branchId } }) : null,
   ]);
 
   const balances = await computeCustomerOutstandingBalances(tenantId, customers.map((c) => c.id));
@@ -66,9 +67,26 @@ export async function getPosData() {
     })),
     doctors,
     branchId,
+    tenantId,
     staffDiscountCapPercent: Number(tenant.staffDiscountCapPercent),
     role: session.user.role,
     schemes,
+    // Everything an offline-queued sale's locally-rendered receipt needs —
+    // cached client-side so printing never requires a server round-trip.
+    receiptHeader: {
+      tenant: { pharmacyName: tenant.pharmacyName, invoiceFooterText: tenant.invoiceFooterText },
+      branch: branch
+        ? {
+            name: branch.name,
+            licensedAddress: branch.licensedAddress,
+            gstin: branch.gstin,
+            drugLicenseRetailNo: branch.drugLicenseRetailNo,
+            drugLicenseWholesaleNo: branch.drugLicenseWholesaleNo,
+            pharmacistName: branch.pharmacistName,
+            pharmacistRegistrationNo: branch.pharmacistRegistrationNo,
+          }
+        : null,
+    },
   };
 }
 
@@ -153,6 +171,10 @@ const completeSaleSchema = z.object({
   managerPin: z.string().optional(),
   prescriptionImagePath: z.string().optional(),
   pharmacistReauth: z.object({ email: z.string().email(), password: z.string().min(1) }).optional(),
+  // Set only when this sale was queued while offline and is now syncing —
+  // lets a retried sync short-circuit to the already-created invoice
+  // instead of double-billing if the client never saw the first response.
+  offlineClientId: z.string().optional(),
   lines: z.array(saleLineSchema).min(1, "Cart is empty"),
 });
 
@@ -180,6 +202,14 @@ export async function completeSale(input: CompleteSaleInput) {
   const session = await requireSession();
   const tenantId = session.user.tenantId;
   const parsed = completeSaleSchema.parse(input);
+
+  if (parsed.offlineClientId) {
+    const existing = await prisma.salesInvoice.findFirst({
+      where: { tenantId, offlineClientId: parsed.offlineClientId },
+      select: { id: true, invoiceNo: true },
+    });
+    if (existing) return { invoiceId: existing.id, invoiceNo: existing.invoiceNo };
+  }
 
   // The upload endpoint always writes under `<sessionTenantId>/<uuid>.<ext>`.
   // Reject anything else so a client can't attach another tenant's
@@ -331,6 +361,7 @@ export async function completeSale(input: CompleteSaleInput) {
         patientName: parsed.patientName || null,
         patientAge: parsed.patientAge ?? null,
         invoiceNo,
+        offlineClientId: parsed.offlineClientId || null,
         subtotal: billing.subtotal,
         taxAmount: billing.taxAmount,
         discountAmount: billing.discountAmount,
