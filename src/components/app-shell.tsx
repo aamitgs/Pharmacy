@@ -70,6 +70,18 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["owner", "pharmacist"],
   },
   {
+    href: "/reports/margin",
+    label: "Margin Report",
+    icon: FileSpreadsheet,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/reports/movers",
+    label: "Fast / Slow Movers",
+    icon: FileSpreadsheet,
+    roles: ["owner", "pharmacist"],
+  },
+  {
     href: "/reports/narcotic-register",
     label: "Narcotic Register",
     icon: ShieldAlert,
