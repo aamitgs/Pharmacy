@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/rbac";
 import { getBranchFilter } from "@/lib/branch-scope";
+import { shouldShowPoweredBy } from "@/lib/branding";
 
 export async function getInvoiceForReceipt(id: string) {
   const session = await requireSession();
@@ -21,7 +22,10 @@ export async function getInvoiceForReceipt(id: string) {
   });
   if (!invoice) return null;
 
-  const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: session.user.tenantId } });
+  const [tenant, showPoweredBy] = await Promise.all([
+    prisma.tenant.findUniqueOrThrow({ where: { id: session.user.tenantId } }),
+    shouldShowPoweredBy(session.user.tenantId),
+  ]);
 
   return {
     id: invoice.id,
@@ -61,6 +65,8 @@ export async function getInvoiceForReceipt(id: string) {
     tenant: {
       pharmacyName: tenant.pharmacyName,
       invoiceFooterText: tenant.invoiceFooterText,
+      logoUrl: tenant.logoUrl,
+      showPoweredBy,
     },
     prescriptionImageUrl: invoice.prescriptionImageUrl,
     pharmacistSignoff: invoice.pharmacistSignoff

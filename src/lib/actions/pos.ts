@@ -20,6 +20,7 @@ import { listActiveSchemesForBilling } from "@/lib/actions/schemes";
 import { validateCoupon } from "@/lib/actions/coupons";
 import { computeCustomerOutstandingBalances } from "@/lib/actions/customers";
 import { runEinvoiceAttempt, runEwayBillAttemptForInvoice } from "@/lib/gsp/engine";
+import { shouldShowPoweredBy } from "@/lib/branding";
 
 const REQUIRES_PRESCRIPTION: readonly string[] = ["H", "H1", "X"];
 
@@ -31,7 +32,7 @@ export async function getPosData() {
   // branches" (Owner's consolidated view is for reporting, not billing).
   const branchId = await resolveConcreteBranch(tenantId, session.user.role);
 
-  const [items, customers, doctors, tenant, schemes, branch] = await Promise.all([
+  const [items, customers, doctors, tenant, schemes, branch, showPoweredBy] = await Promise.all([
     prisma.item.findMany({
       where: { tenantId, batches: { some: { branchId: branchId ?? undefined, currentQty: { gt: 0 } } } },
       include: {
@@ -47,6 +48,7 @@ export async function getPosData() {
     prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } }),
     listActiveSchemesForBilling(tenantId),
     branchId ? prisma.branch.findUnique({ where: { id: branchId } }) : null,
+    shouldShowPoweredBy(tenantId),
   ]);
 
   const balances = await computeCustomerOutstandingBalances(tenantId, customers.map((c) => c.id));
@@ -74,7 +76,12 @@ export async function getPosData() {
     // Everything an offline-queued sale's locally-rendered receipt needs —
     // cached client-side so printing never requires a server round-trip.
     receiptHeader: {
-      tenant: { pharmacyName: tenant.pharmacyName, invoiceFooterText: tenant.invoiceFooterText },
+      tenant: {
+        pharmacyName: tenant.pharmacyName,
+        invoiceFooterText: tenant.invoiceFooterText,
+        logoUrl: tenant.logoUrl,
+        showPoweredBy,
+      },
       branch: branch
         ? {
             name: branch.name,

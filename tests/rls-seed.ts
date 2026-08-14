@@ -255,6 +255,10 @@ export async function seedTenantSlice(suffix: string) {
       data: { id: `sub-${suffix}`, tenantId: tenant.id, planId: plan.id, status: "trialing" },
     });
 
+    const apiKey = await tx.apiKey.create({
+      data: { id: `apikey-${suffix}`, tenantId: tenant.id, name: "Test key", keyHash: `hash-${suffix}`, keyPrefix: "phk_test" },
+    });
+
     return {
       tenantId: tenant.id,
       branchId: branch.id,
@@ -286,6 +290,7 @@ export async function seedTenantSlice(suffix: string) {
       auditLogId: auditLog.id,
       backupLogId: backupLog.id,
       tenantSubscriptionId: tenantSubscription.id,
+      apiKeyId: apiKey.id,
     };
   });
 }

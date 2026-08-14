@@ -35,7 +35,14 @@ export const authConfig = {
         pathname.startsWith("/login") ||
         pathname.startsWith("/signup") ||
         pathname.startsWith("/api/auth") ||
-        pathname.startsWith("/api/webhooks");
+        pathname.startsWith("/api/webhooks") ||
+        // The Super-Admin console (/admin/*) and the public v1 API
+        // (/api/v1/*) both authenticate themselves — a separate signed
+        // cookie for admin, an API key for /api/v1 — independent of this
+        // tenant NextAuth session, so the tenant-session gate must not
+        // intercept them.
+        pathname.startsWith("/admin") ||
+        pathname.startsWith("/api/v1");
       if (isPublic) return true;
       if (!isLoggedIn) return false;
 

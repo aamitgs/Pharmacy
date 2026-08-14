@@ -188,7 +188,18 @@ async function main() {
     },
   });
 
+  await prisma.superAdmin.upsert({
+    where: { email: "admin@platform.local" },
+    update: {},
+    create: {
+      email: "admin@platform.local",
+      name: "Platform Admin",
+      passwordHash: await bcrypt.hash("PlatformAdmin@12345", 10),
+    },
+  });
+
   console.log("Seeded tenant:", tenant.pharmacyName, "branch:", branch.name);
+  console.log("Admin console login: admin@platform.local / PlatformAdmin@12345");
   console.log("Login with owner@demo-pharmacy.local / Owner@12345");
   console.log("Manager PIN for discount overrides: 1234");
 }

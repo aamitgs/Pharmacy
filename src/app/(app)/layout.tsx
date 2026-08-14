@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveSelectedBranch } from "@/lib/branch-scope";
+import { shouldShowPoweredBy } from "@/lib/branding";
 import { AppShell } from "@/components/app-shell";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -9,9 +10,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!session?.user) redirect("/login");
   if (session.user.mfaSetupRequired) redirect("/mfa-setup");
 
-  const [tenant, branchScope] = await Promise.all([
+  const [tenant, branchScope, showPoweredBy] = await Promise.all([
     prisma.tenant.findUnique({ where: { id: session.user.tenantId } }),
     resolveSelectedBranch(session.user.tenantId, session.user.role),
+    shouldShowPoweredBy(session.user.tenantId),
   ]);
 
   return (
@@ -20,6 +22,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         name: session.user.name ?? "User",
         role: session.user.role,
         pharmacyName: tenant?.pharmacyName ?? "Pharmacy",
+        logoUrl: tenant?.logoUrl ?? null,
+        primaryColor: tenant?.primaryColor ?? null,
+        showPoweredBy,
       }}
       branchScope={branchScope}
     >

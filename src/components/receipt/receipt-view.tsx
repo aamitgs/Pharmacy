@@ -17,6 +17,10 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
       className="mx-auto w-full bg-white p-4 font-mono text-[11px] leading-snug text-black print:p-2"
     >
       <div className="text-center">
+        {data.tenant.logoUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={data.tenant.logoUrl} alt="" className="mx-auto mb-1 h-10 max-w-[60%] object-contain" />
+        )}
         <div className="text-sm font-bold">{data.tenant.pharmacyName}</div>
         <div className="text-[10px]">{data.branch.name}</div>
         <div className="text-[10px]">{data.branch.licensedAddress}</div>
@@ -161,6 +165,10 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
           <Divider />
           <div className="text-center text-[10px]">{data.tenant.invoiceFooterText}</div>
         </>
+      )}
+
+      {data.tenant.showPoweredBy && (
+        <div className="mt-1 text-center text-[9px] text-neutral-500">Powered by Pharmacy Billing</div>
       )}
     </div>
   );

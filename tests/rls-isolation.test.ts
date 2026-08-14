@@ -71,6 +71,7 @@ const cases: Case[] = [
   { label: "StockTransfer", aId: () => A.stockTransferId, bId: () => B.stockTransferId, find: (id) => prisma.stockTransfer.findUnique({ where: { id } }) },
   { label: "NarcoticRegisterEntry", aId: () => A.narcoticRegisterEntryId, bId: () => B.narcoticRegisterEntryId, find: (id) => prisma.narcoticRegisterEntry.findUnique({ where: { id } }) },
   { label: "TenantSubscription", aId: () => A.tenantSubscriptionId, bId: () => B.tenantSubscriptionId, find: (id) => prisma.tenantSubscription.findUnique({ where: { id } }) },
+  { label: "ApiKey", aId: () => A.apiKeyId, bId: () => B.apiKeyId, find: (id) => prisma.apiKey.findUnique({ where: { id } }) },
   // Indirect (no direct tenantId column — scoped via EXISTS into parent)
   { label: "Batch (indirect via Item)", aId: () => A.batchId, bId: () => B.batchId, find: (id) => prisma.batch.findUnique({ where: { id } }) },
   { label: "SalesInvoiceItem (indirect via SalesInvoice)", aId: () => A.invoiceItemId, bId: () => B.invoiceItemId, find: (id) => prisma.salesInvoiceItem.findUnique({ where: { id } }) },

@@ -14,7 +14,7 @@ import { verifyTotpCode } from "@/lib/totp";
 async function findUserForLogin(email: string) {
   const [, user] = await basePrisma.$transaction([
     basePrisma.$executeRaw`SELECT set_config('app.rls_bypass', 'true', true)`,
-    basePrisma.user.findFirst({ where: { email } }),
+    basePrisma.user.findFirst({ where: { email }, include: { tenant: { select: { suspendedAt: true } } } }),
   ]);
   return user;
 }
@@ -28,6 +28,9 @@ class MfaRequiredError extends CredentialsSignin {
 }
 class InvalidTotpError extends CredentialsSignin {
   code = "INVALID_TOTP";
+}
+class TenantSuspendedError extends CredentialsSignin {
+  code = "TENANT_SUSPENDED";
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -53,6 +56,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const passwordValid = await bcrypt.compare(password, user.passwordHash);
         if (!passwordValid) return null;
+
+        if (user.tenant.suspendedAt) {
+          throw new TenantSuspendedError();
+        }
 
         if (user.totpEnabled && user.totpSecret) {
           if (!totpCode) {

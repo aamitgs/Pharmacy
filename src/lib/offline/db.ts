@@ -3,7 +3,7 @@ import type { PosItem, PosCustomer, PosDoctor, PosScheme } from "@/components/po
 import type { CompleteSaleInput } from "@/lib/actions/pos";
 
 export interface ReceiptHeader {
-  tenant: { pharmacyName: string; invoiceFooterText: string | null };
+  tenant: { pharmacyName: string; invoiceFooterText: string | null; logoUrl: string | null; showPoweredBy: boolean };
   branch: {
     name: string;
     licensedAddress: string;

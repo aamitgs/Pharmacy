@@ -14,6 +14,7 @@ import { AlertCircle, Loader2 } from "lucide-react";
 const ERROR_MESSAGES: Record<string, string> = {
   MFA_REQUIRED: "Enter the 6-digit code from your authenticator app.",
   INVALID_TOTP: "That code is invalid or expired. Try again.",
+  TENANT_SUSPENDED: "This account has been suspended. Contact support for help.",
   credentials: "Incorrect email or password.",
 };
 

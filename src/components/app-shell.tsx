@@ -134,7 +134,14 @@ export function AppShell({
   branchScope,
   children,
 }: {
-  user: { name: string; role: UserRole; pharmacyName: string };
+  user: {
+    name: string;
+    role: UserRole;
+    pharmacyName: string;
+    logoUrl?: string | null;
+    primaryColor?: string | null;
+    showPoweredBy?: boolean;
+  };
   branchScope: {
     branches: { id: string; name: string }[];
     branchId: string | null;
@@ -149,8 +156,17 @@ export function AppShell({
   return (
     <div className="flex min-h-screen">
       <aside className="flex w-56 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground print:hidden">
-        <div className="flex h-12 items-center border-b px-4">
-          <span className="truncate text-sm font-semibold">{user.pharmacyName}</span>
+        <div className="flex h-12 items-center gap-2 border-b px-4">
+          {user.logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={user.logoUrl} alt="" className="h-6 w-6 shrink-0 rounded object-contain" />
+          )}
+          <span
+            className="truncate text-sm font-semibold"
+            style={user.primaryColor ? { color: user.primaryColor } : undefined}
+          >
+            {user.pharmacyName}
+          </span>
         </div>
         <nav className="flex-1 space-y-0.5 p-2">
           {items.map((item) => {
@@ -180,6 +196,9 @@ export function AppShell({
           <SignOutButton variant="ghost" size="sm" className="w-full justify-start">
             Sign out
           </SignOutButton>
+          {user.showPoweredBy && (
+            <div className="mt-1.5 px-2 text-[10px] text-sidebar-foreground/40">Powered by Pharmacy Billing</div>
+          )}
         </div>
       </aside>
       <main className="flex flex-1 flex-col overflow-x-hidden bg-background print:w-full">
