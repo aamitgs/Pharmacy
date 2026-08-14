@@ -492,12 +492,76 @@ of what security testing has and has **not** been done on this codebase
 (no penetration test has been performed; this documents scope for one,
 not a substitute for one).
 
+## Hospital Mode (Phase 7)
+
+A tenant-level toggle (`tenants.tenantType`, `retail` or `hospital`), not a
+fork of the product. A retail tenant never sees or can route to anything
+below — every Hospital Mode page calls `requireHospitalTenant()`
+(`src/lib/hospital-scope.ts`), which 404s outright for a non-hospital
+tenant, and the sidebar nav filters the same way (`app-shell.tsx`'s
+`hospitalOnly` flag). A hospital's outpatient counter keeps using the exact
+same POS/`SalesInvoice` path retail does; this phase is entirely the
+inpatient (IPD) side layered on top. Pick "Hospital" at signup, or have a
+super-admin flip an existing tenant's type from the admin console.
+
+**Ward/sub-store stock hierarchy.** `Ward` (ICU/OT/general/pharmacy
+sub-store, created per-branch in Settings > Wards) is a stock location one
+level deeper than `Branch` — `batches.wardId` is nullable, exactly
+mirroring how `batches.branchId` was added in Phase 4: `null` is
+central/branch-level stock, set is ward-scoped stock. The same batch number
+never splits across locations; moving stock to a ward creates/updates that
+ward's own `Batch` row, the same principle Phase 4's stock transfers use
+between branches.
+
+**Indents** (`src/lib/actions/indents.ts`, modeled directly on Phase 4's
+stock-transfer request/approve flow) are how a ward gets stock: a Ward
+Nurse requests an item and quantity (no batch — they don't pick one), a
+Ward/Duty Pharmacist or Pharmacist reviews the queue (current central
+stock, FEFO-suggested batch with room to override) and issues fully,
+partially, or rejects in one decisive action. Issuing decrements the
+central batch and creates/increments the ward's own batch row, writing an
+`AuditLog` entry.
+
+**Patient admissions** (`PatientAdmission`) are deliberately minimal — an
+admission reference, patient name, and ward, not an EMR. IPD dispensing
+happens directly from the ward's own stock (no separate transfer step,
+same discipline as POS `completeSale`) and does **not** create a
+`SalesInvoice`; dispenses accumulate against the admission as consumption
+records for an external HIS to bill from. Unused-medicine returns live on
+the same screen as dispensing (`IpdDispense.returnedQty`), incrementing the
+ward batch back.
+
+**Roles**: `ward_nurse` can create indents and record dispenses/returns for
+their assigned ward(s) only (`WardAssignment`, enforced server-side via
+`assertWardAccess` — not just filtered in the UI) and is explicitly
+excluded from retail billing/purchasing (`requireRetailSession` in
+`rbac.ts`). `ward_pharmacist` is treated as `pharmacist` everywhere that
+role is already checked — POS prescription sign-off, purchasing approvals,
+MFA requirement — plus indent approval; it's an additive permission, not a
+separate parallel set. Staff accounts (including these two roles) are
+created in Settings > Staff, the one place additional users get created at
+all — a gap that predated this phase and had to be filled for ward roles
+to be assignable to anything.
+
+**Public API extension** (`/api/v1/wards`, `/api/v1/wards/{id}/stock`,
+`/api/v1/wards/{id}/consumption`, `/api/v1/admissions`,
+`/api/v1/admissions/{ref}`) uses the exact same API-key/rate-limit
+mechanism as Phase 6's endpoints and rejects with 403 on a non-hospital
+tenant. It's built generically for any hospital's HIS to consume — nothing
+here is specific to this team's own separate Hospital OS project, which
+would just be one API consumer among others if it integrates later (that
+integration work is explicitly not part of this phase).
+
+**Explicitly out of scope**, per this phase's own spec: hospital billing
+itself (this phase produces the consumption data an external HIS bills
+from, not an invoice), a full EMR, and direct Hospital OS integration work.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,
 Marg/Vyapar importers, white-labeling beyond basic fields, a public API,
-real payment gateway integration — shipped in Phase 6 (see below). What's
-still deliberately out of scope, per that phase's own spec: Hospital Mode,
+real payment gateway integration — shipped in Phase 6; Hospital Mode
+shipped in Phase 7 (see above). What's still deliberately out of scope:
 AI-assisted features, a full self-serve SaaS billing-history UI (Settings >
 Billing shows the current plan and lets you switch — there's no invoice
 history/PDF receipts screen), and marketplace/accounting integrations.

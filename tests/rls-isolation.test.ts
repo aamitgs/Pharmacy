@@ -72,6 +72,12 @@ const cases: Case[] = [
   { label: "NarcoticRegisterEntry", aId: () => A.narcoticRegisterEntryId, bId: () => B.narcoticRegisterEntryId, find: (id) => prisma.narcoticRegisterEntry.findUnique({ where: { id } }) },
   { label: "TenantSubscription", aId: () => A.tenantSubscriptionId, bId: () => B.tenantSubscriptionId, find: (id) => prisma.tenantSubscription.findUnique({ where: { id } }) },
   { label: "ApiKey", aId: () => A.apiKeyId, bId: () => B.apiKeyId, find: (id) => prisma.apiKey.findUnique({ where: { id } }) },
+  // Phase 7: Hospital Mode
+  { label: "Ward", aId: () => A.wardId, bId: () => B.wardId, find: (id) => prisma.ward.findUnique({ where: { id } }) },
+  { label: "WardAssignment", aId: () => A.wardAssignmentId, bId: () => B.wardAssignmentId, find: (id) => prisma.wardAssignment.findUnique({ where: { id } }) },
+  { label: "Indent", aId: () => A.indentId, bId: () => B.indentId, find: (id) => prisma.indent.findUnique({ where: { id } }) },
+  { label: "PatientAdmission", aId: () => A.patientAdmissionId, bId: () => B.patientAdmissionId, find: (id) => prisma.patientAdmission.findUnique({ where: { id } }) },
+  { label: "IpdDispense", aId: () => A.ipdDispenseId, bId: () => B.ipdDispenseId, find: (id) => prisma.ipdDispense.findUnique({ where: { id } }) },
   // Indirect (no direct tenantId column — scoped via EXISTS into parent)
   { label: "Batch (indirect via Item)", aId: () => A.batchId, bId: () => B.batchId, find: (id) => prisma.batch.findUnique({ where: { id } }) },
   { label: "SalesInvoiceItem (indirect via SalesInvoice)", aId: () => A.invoiceItemId, bId: () => B.invoiceItemId, find: (id) => prisma.salesInvoiceItem.findUnique({ where: { id } }) },
@@ -79,6 +85,7 @@ const cases: Case[] = [
   { label: "GrnItem (indirect via Grn)", aId: () => A.grnItemId, bId: () => B.grnItemId, find: (id) => prisma.grnItem.findUnique({ where: { id } }) },
   { label: "PurchaseReturnItem (indirect via PurchaseReturn)", aId: () => A.purchaseReturnItemId, bId: () => B.purchaseReturnItemId, find: (id) => prisma.purchaseReturnItem.findUnique({ where: { id } }) },
   { label: "StockTransferItem (indirect via StockTransfer)", aId: () => A.stockTransferItemId, bId: () => B.stockTransferItemId, find: (id) => prisma.stockTransferItem.findUnique({ where: { id } }) },
+  { label: "IndentItem (indirect via Indent)", aId: () => A.indentItemId, bId: () => B.indentItemId, find: (id) => prisma.indentItem.findUnique({ where: { id } }) },
 ];
 
 describe("cross-tenant read isolation — every RLS-protected table", () => {

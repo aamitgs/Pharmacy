@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertCircle, Check, Loader2 } from "lucide-react";
 
 interface PlanSummary {
@@ -29,6 +30,7 @@ export function SignupForm({ plans }: { plans: PlanSummary[] }) {
   const [licensedAddress, setLicensedAddress] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [tenantType, setTenantType] = useState<"retail" | "hospital">("retail");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -38,7 +40,7 @@ export function SignupForm({ plans }: { plans: PlanSummary[] }) {
     setLoading(true);
     setError(null);
     try {
-      await signUpTenant({ pharmacyName, ownerName, licensedAddress, email, password });
+      await signUpTenant({ pharmacyName, ownerName, licensedAddress, email, password, tenantType });
       const result = await signIn("credentials", { email, password, redirect: false });
       if (result?.error) {
         // Signup succeeded but the immediate sign-in call failed (rare) —
@@ -109,6 +111,18 @@ export function SignupForm({ plans }: { plans: PlanSummary[] }) {
               <div className="space-y-1.5">
                 <Label htmlFor="pharmacyName">Pharmacy name</Label>
                 <Input id="pharmacyName" value={pharmacyName} onChange={(e) => setPharmacyName(e.target.value)} required disabled={loading} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="tenantType">Account type</Label>
+                <Select value={tenantType} onValueChange={(v) => setTenantType(v as "retail" | "hospital")} disabled={loading}>
+                  <SelectTrigger id="tenantType">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="retail">Retail pharmacy</SelectItem>
+                    <SelectItem value="hospital">Hospital (adds ward/indent/IPD screens)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="licensedAddress">Branch address</Label>

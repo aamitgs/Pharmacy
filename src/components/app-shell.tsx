@@ -26,6 +26,8 @@ import {
   Percent,
   Award,
   Ticket,
+  BedDouble,
+  ClipboardPlus,
 } from "lucide-react";
 
 type NavItem = {
@@ -33,18 +35,30 @@ type NavItem = {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   roles?: UserRole[];
+  // Phase 7 (Hospital Mode): only rendered when the tenant's tenantType is
+  // 'hospital' — a retail tenant never sees these, and the pages
+  // themselves 404 via requireHospitalTenant() if reached directly.
+  hospitalOnly?: boolean;
 };
+
+// Retail billing/purchasing screens predate Hospital Mode and were written
+// assuming every session could reach them — ward_nurse is excluded here to
+// match the server-side requireRetailSession() gate added in Phase 7
+// (src/lib/rbac.ts). ward_pharmacist is unaffected (treated as pharmacist).
+const RETAIL_ONLY_ROLES: UserRole[] = ["owner", "pharmacist", "counter_staff", "ward_pharmacist"];
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/alerts", label: "Alerts", icon: TriangleAlert },
-  { href: "/pos", label: "Billing", icon: ScanBarcode },
+  { href: "/pos", label: "Billing", icon: ScanBarcode, roles: RETAIL_ONLY_ROLES },
   { href: "/items", label: "Items & Batches", icon: Package },
-  { href: "/suppliers", label: "Suppliers", icon: Truck },
-  { href: "/purchase-orders", label: "Purchase Orders", icon: ClipboardList },
-  { href: "/grn", label: "GRN", icon: PackageCheck },
-  { href: "/purchase-returns", label: "Purchase Returns", icon: Undo2 },
-  { href: "/transfers", label: "Stock Transfers", icon: ArrowLeftRight },
+  { href: "/suppliers", label: "Suppliers", icon: Truck, roles: RETAIL_ONLY_ROLES },
+  { href: "/purchase-orders", label: "Purchase Orders", icon: ClipboardList, roles: RETAIL_ONLY_ROLES },
+  { href: "/grn", label: "GRN", icon: PackageCheck, roles: RETAIL_ONLY_ROLES },
+  { href: "/purchase-returns", label: "Purchase Returns", icon: Undo2, roles: RETAIL_ONLY_ROLES },
+  { href: "/transfers", label: "Stock Transfers", icon: ArrowLeftRight, roles: RETAIL_ONLY_ROLES },
+  { href: "/indents", label: "Indents", icon: ClipboardPlus, hospitalOnly: true },
+  { href: "/admissions", label: "Patient Admissions", icon: BedDouble, hospitalOnly: true },
   {
     href: "/branches",
     label: "Branches",
@@ -141,6 +155,8 @@ export function AppShell({
     logoUrl?: string | null;
     primaryColor?: string | null;
     showPoweredBy?: boolean;
+    // Phase 7: hospital-only nav items only render when this is 'hospital'.
+    tenantType?: string;
   };
   branchScope: {
     branches: { id: string; name: string }[];
@@ -151,7 +167,10 @@ export function AppShell({
 }) {
   const pathname = usePathname();
 
-  const items = NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(user.role));
+  const items = NAV_ITEMS.filter(
+    (item) =>
+      (!item.roles || item.roles.includes(user.role)) && (!item.hospitalOnly || user.tenantType === "hospital")
+  );
 
   return (
     <div className="flex min-h-screen">

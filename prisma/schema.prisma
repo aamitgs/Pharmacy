@@ -72,6 +72,12 @@ model Tenant {
   subscription TenantSubscription?
   apiKeys      ApiKey[]
 
+  wards             Ward[]
+  wardAssignments   WardAssignment[]
+  indents           Indent[]
+  patientAdmissions PatientAdmission[]
+  ipdDispenses      IpdDispense[]
+
   @@map("tenants")
 }
 
@@ -176,6 +182,8 @@ model Branch {
   stockTransfersFrom      StockTransfer[]         @relation("StockTransferFrom")
   stockTransfersTo        StockTransfer[]         @relation("StockTransferTo")
 
+  wards Ward[]
+
   @@index([tenantId])
   @@map("branches")
 }
@@ -215,6 +223,8 @@ model Item {
   grnItems            GrnItem[]
   purchaseReturnItems PurchaseReturnItem[]
   stockTransferItems  StockTransferItem[]
+  indentItems         IndentItem[]
+  ipdDispenses        IpdDispense[]
 
   narcoticRegisterEntries NarcoticRegisterEntry[]
 
@@ -231,6 +241,13 @@ model Batch {
   // as separate Batch rows at different branches; a transfer creates a new
   // row at the destination rather than splitting one row across branches.
   branchId     String
+  // Phase 7 (Hospital Mode): null means this row is central/branch-level
+  // stock (the only case for a retail tenant). Set means this row is
+  // ward-scoped stock within that same branch — the same "new row at the
+  // destination, never split across locations" principle as branchId
+  // above, just one level deeper. An indent issue creates/updates the
+  // ward's own Batch row rather than moving the central one.
+  wardId       String?
   batchNo      String
   mfgDate      DateTime?
   expiryDate   DateTime
@@ -244,10 +261,13 @@ model Batch {
 
   item                Item                 @relation(fields: [itemId], references: [id], onDelete: Cascade)
   branch              Branch               @relation(fields: [branchId], references: [id])
+  ward                Ward?                @relation(fields: [wardId], references: [id])
   salesInvoiceItems   SalesInvoiceItem[]
   grnItems            GrnItem[]
   purchaseReturnItems PurchaseReturnItem[]
   stockTransferItems  StockTransferItem[]
+  indentItems         IndentItem[]
+  ipdDispenses        IpdDispense[]
 
   narcoticRegisterEntries NarcoticRegisterEntry[]
 
@@ -255,6 +275,8 @@ model Batch {
   @@index([itemId, expiryDate])
   @@index([branchId])
   @@index([branchId, itemId, batchNo])
+  @@index([wardId])
+  @@index([wardId, itemId, batchNo])
   @@map("batches")
 }
 
@@ -590,6 +612,15 @@ enum UserRole {
   owner
   pharmacist
   counter_staff
+  // Phase 7 (Hospital Mode) — only assignable/reachable on a tenant with
+  // tenantType 'hospital'. ward_nurse: creates Indents and records IPD
+  // dispenses/returns for their assigned ward(s) only, no access to
+  // purchasing or retail billing. ward_pharmacist: approves/issues
+  // Indents, and everywhere the existing "pharmacist" role is checked
+  // (rbac.ts, POS prescription sign-off) it is treated identically — a
+  // hospital's central/OPD pharmacist, not a separate permission set.
+  ward_nurse
+  ward_pharmacist
 }
 
 model User {
@@ -620,6 +651,11 @@ model User {
 
   stockTransfersRequested StockTransfer[] @relation("StockTransferRequestedBy")
   stockTransfersApproved  StockTransfer[] @relation("StockTransferApprovedBy")
+
+  wardAssignments      WardAssignment[]
+  indentsRequested     Indent[]         @relation("IndentRequestedBy")
+  indentsApproved      Indent[]         @relation("IndentApprovedBy")
+  ipdDispensesRecorded IpdDispense[]    @relation("IpdDispenseDispensedBy")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -1007,4 +1043,174 @@ model ApiKey {
 
   @@index([tenantId])
   @@map("api_keys")
+}
+
+// ---------------------------------------------------------------------------
+// Hospital Mode — Phase 7
+//
+// A tenant-level toggle (Tenant.tenantType), not a fork of the product: a
+// retail tenant never has rows in any table below, and every route/nav item
+// that reaches them is unreachable (notFound(), not just hidden) unless
+// tenantType is 'hospital'. A hospital's OPD counter keeps using the exact
+// same POS/SalesInvoice path as retail; everything here is the IPD side on
+// top of it.
+// ---------------------------------------------------------------------------
+
+enum WardType {
+  icu
+  ot
+  general
+  pharmacy_substore
+}
+
+// A Ward is effectively its own small stock location one level deeper than
+// Branch (see Batch.wardId) — created under a Branch, never spanning branches.
+model Ward {
+  id        String   @id @default(cuid())
+  tenantId  String
+  branchId  String
+  name      String
+  type      WardType
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  batches           Batch[]
+  wardAssignments   WardAssignment[]
+  indents           Indent[]
+  patientAdmissions PatientAdmission[]
+
+  @@index([tenantId])
+  @@index([branchId])
+  @@map("wards")
+}
+
+// Which ward(s) a Ward Nurse (or Ward/Duty Pharmacist) is assigned to —
+// server-side enforcement point for "a nurse assigned to ICU cannot see or
+// act on General Ward data". Owner/Pharmacist/Ward Pharmacist are not
+// restricted by this table; it only narrows ward_nurse.
+model WardAssignment {
+  id       String @id @default(cuid())
+  tenantId String
+  userId   String
+  wardId   String
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ward   Ward   @relation(fields: [wardId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, wardId])
+  @@index([tenantId])
+  @@index([userId])
+  @@index([wardId])
+  @@map("ward_assignments")
+}
+
+enum IndentStatus {
+  pending
+  approved
+  partially_issued
+  issued
+  rejected
+}
+
+// Ward-side stock request, approved/issued by the central pharmacy. Modeled
+// on StockTransfer (Phase 4) — the difference is a nurse requests an item
+// and quantity, not a specific batch; the pharmacist picks the batch (FEFO,
+// with override) at issue time.
+model Indent {
+  id                String       @id @default(cuid())
+  tenantId          String
+  wardId            String
+  requestedByUserId String
+  status            IndentStatus @default(pending)
+  createdAt         DateTime     @default(now())
+  approvedByUserId  String?
+  approvedAt        DateTime?
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ward        Ward   @relation(fields: [wardId], references: [id])
+  requestedBy User   @relation("IndentRequestedBy", fields: [requestedByUserId], references: [id])
+  approvedBy  User?  @relation("IndentApprovedBy", fields: [approvedByUserId], references: [id])
+
+  items IndentItem[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([wardId])
+  @@map("indents")
+}
+
+model IndentItem {
+  id           String  @id @default(cuid())
+  indentId     String
+  itemId       String
+  // Null at request time (a nurse requests an item, not a specific batch).
+  // Filled in at issue time with the *source* (central) batch FEFO-selected
+  // to fulfill this line, for traceability — matches how GrnItem/
+  // StockTransferItem/SalesInvoiceItem all reference the batch a
+  // transaction actually moved stock against.
+  batchId      String?
+  qtyRequested Int
+  qtyIssued    Int     @default(0)
+
+  indent Indent @relation(fields: [indentId], references: [id], onDelete: Cascade)
+  item   Item   @relation(fields: [itemId], references: [id])
+  batch  Batch? @relation(fields: [batchId], references: [id])
+
+  @@index([indentId])
+  @@index([itemId])
+  @@map("indent_items")
+}
+
+// Deliberately minimal — not an EMR. Just enough to tag IPD dispenses to a
+// real patient/stay; an external HIS is what builds the actual hospital
+// bill from the consumption records this produces (see IpdDispense).
+model PatientAdmission {
+  id           String    @id @default(cuid())
+  tenantId     String
+  admissionRef String
+  patientName  String
+  wardId       String
+  admittedAt   DateTime  @default(now())
+  dischargedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ward   Ward   @relation(fields: [wardId], references: [id])
+
+  dispenses IpdDispense[]
+
+  @@unique([tenantId, admissionRef])
+  @@index([tenantId])
+  @@index([wardId])
+  @@map("patient_admissions")
+}
+
+// A consumption record against an admission, dispensed directly from the
+// ward's own stock (no separate transfer step, same discipline as POS
+// completeSale decrementing its branch's Batch directly). Does NOT create a
+// SalesInvoice — IPD consumption feeds an external HIS's own bill, not this
+// app's billing. returnedQty supports the unused-medicine return workflow
+// without a separate return entity.
+model IpdDispense {
+  id                String   @id @default(cuid())
+  tenantId          String
+  admissionId       String
+  itemId            String
+  batchId           String
+  qty               Int
+  dispensedByUserId String
+  dispensedAt       DateTime @default(now())
+  returnedQty       Int      @default(0)
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  admission   PatientAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  item        Item             @relation(fields: [itemId], references: [id])
+  batch       Batch            @relation(fields: [batchId], references: [id])
+  dispensedBy User             @relation("IpdDispenseDispensedBy", fields: [dispensedByUserId], references: [id])
+
+  @@index([tenantId])
+  @@index([admissionId])
+  @@map("ipd_dispenses")
 }

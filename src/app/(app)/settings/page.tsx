@@ -6,6 +6,9 @@ import { getLicenseExpiryWindow } from "@/lib/actions/branch-settings";
 import { getBillingInfo } from "@/lib/actions/subscription";
 import { getBrandingInfo } from "@/lib/actions/branding";
 import { getApiAccessInfo } from "@/lib/actions/api-keys";
+import { listWards } from "@/lib/actions/wards";
+import { listStaff } from "@/lib/actions/staff";
+import { listBranches } from "@/lib/actions/branches";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BackupPanel } from "@/components/settings/backup-panel";
 import { SecurityPanel } from "@/components/settings/security-panel";
@@ -15,6 +18,8 @@ import { CompliancePanel } from "@/components/settings/compliance-panel";
 import { BillingPanel } from "@/components/settings/billing-panel";
 import { BrandingPanel } from "@/components/settings/branding-panel";
 import { ApiPanel } from "@/components/settings/api-panel";
+import { WardsPanel } from "@/components/settings/wards-panel";
+import { StaffPanel } from "@/components/settings/staff-panel";
 import { Separator } from "@/components/ui/separator";
 
 export default async function SettingsPage() {
@@ -24,14 +29,21 @@ export default async function SettingsPage() {
   const canImport = canEditItemMaster(session.user.role);
   const canCompliance = canManageCompliance(session.user.role);
   const canBilling = canManageUsers(session.user.role);
+  const canManageStaff = canManageUsers(session.user.role);
 
-  const [backupStatus, user, licenseWindow, billing, branding, apiAccess] = await Promise.all([
+  const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: session.user.tenantId } });
+  const isHospital = tenant.tenantType === "hospital";
+
+  const [backupStatus, user, licenseWindow, billing, branding, apiAccess, wards, staff, branches] = await Promise.all([
     getBackupStatus(),
     prisma.user.findUniqueOrThrow({ where: { id: session.user.id } }),
     canCompliance ? getLicenseExpiryWindow() : Promise.resolve(null),
     canBilling ? getBillingInfo() : Promise.resolve(null),
     canBilling ? getBrandingInfo() : Promise.resolve(null),
     canBilling ? getApiAccessInfo() : Promise.resolve(null),
+    isHospital && canManageUsers(session.user.role) ? listWards() : Promise.resolve(null),
+    canManageStaff ? listStaff() : Promise.resolve(null),
+    canManageStaff ? listBranches() : Promise.resolve(null),
   ]);
 
   return (
@@ -46,6 +58,8 @@ export default async function SettingsPage() {
           {canBilling && <TabsTrigger value="branding">Branding</TabsTrigger>}
           {canBilling && <TabsTrigger value="billing">Billing</TabsTrigger>}
           {canBilling && <TabsTrigger value="api">API</TabsTrigger>}
+          {canManageStaff && <TabsTrigger value="staff">Staff</TabsTrigger>}
+          {isHospital && wards && <TabsTrigger value="wards">Wards</TabsTrigger>}
         </TabsList>
         <TabsContent value="backup" className="pt-4">
           <BackupPanel
@@ -84,6 +98,16 @@ export default async function SettingsPage() {
         {canBilling && apiAccess && (
           <TabsContent value="api" className="pt-4">
             <ApiPanel initial={apiAccess} />
+          </TabsContent>
+        )}
+        {canManageStaff && staff && (
+          <TabsContent value="staff" className="pt-4">
+            <StaffPanel initialStaff={staff} wards={wards?.map((w) => ({ id: w.id, name: w.name })) ?? []} isHospital={isHospital} />
+          </TabsContent>
+        )}
+        {isHospital && wards && (
+          <TabsContent value="wards" className="pt-4">
+            <WardsPanel initialWards={wards} branches={branches ?? []} />
           </TabsContent>
         )}
       </Tabs>

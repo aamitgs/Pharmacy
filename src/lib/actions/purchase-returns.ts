@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma, runInTenantTransaction } from "@/lib/prisma";
-import { requireRole, requireSession } from "@/lib/rbac";
+import { requireRole, requireRetailSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
 import {
   serializePurchaseReturnItem,
@@ -28,7 +28,7 @@ const returnSchema = z.object({
 export type PurchaseReturnInput = z.infer<typeof returnSchema>;
 
 export async function listPurchaseReturns() {
-  const session = await requireSession();
+  const session = await requireRetailSession();
   const branchFilter = await getBranchFilter(session.user.tenantId, session.user.role);
   const returns = await prisma.purchaseReturn.findMany({
     where: { tenantId: session.user.tenantId, ...branchFilter },
@@ -46,7 +46,7 @@ export async function listPurchaseReturns() {
 }
 
 export async function getPurchaseReturn(id: string) {
-  const session = await requireSession();
+  const session = await requireRetailSession();
   const ret = await prisma.purchaseReturn.findFirst({
     where: { id, tenantId: session.user.tenantId },
     include: {
@@ -75,7 +75,7 @@ export async function getPurchaseReturn(id: string) {
 }
 
 export async function createPurchaseReturn(input: PurchaseReturnInput) {
-  const session = await requireRole(["owner", "pharmacist"]);
+  const session = await requireRole(["owner", "pharmacist", "ward_pharmacist"]);
   const parsed = returnSchema.parse(input);
 
   const branchId = await resolveConcreteBranch(session.user.tenantId, session.user.role);

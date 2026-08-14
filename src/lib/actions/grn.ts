@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma, runInTenantTransaction } from "@/lib/prisma";
-import { requireRole, requireSession } from "@/lib/rbac";
+import { requireRole, requireRetailSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
 import { serializeGrnItem, serializeSupplier } from "@/lib/serialize";
 import { getBranchFilter, resolveConcreteBranch } from "@/lib/branch-scope";
@@ -30,7 +30,7 @@ const grnSchema = z.object({
 export type GrnInput = z.infer<typeof grnSchema>;
 
 export async function listGrns() {
-  const session = await requireSession();
+  const session = await requireRetailSession();
   const branchFilter = await getBranchFilter(session.user.tenantId, session.user.role);
   const grns = await prisma.grn.findMany({
     where: { tenantId: session.user.tenantId, ...branchFilter },
@@ -48,7 +48,7 @@ export async function listGrns() {
 }
 
 export async function getGrn(id: string) {
-  const session = await requireSession();
+  const session = await requireRetailSession();
   const grn = await prisma.grn.findFirst({
     where: { id, tenantId: session.user.tenantId },
     include: {
@@ -82,7 +82,7 @@ export async function getGrn(id: string) {
 }
 
 export async function createGrn(input: GrnInput) {
-  const session = await requireRole(["owner", "pharmacist"]);
+  const session = await requireRole(["owner", "pharmacist", "ward_pharmacist"]);
   const parsed = grnSchema.parse(input);
 
   const branchId = await resolveConcreteBranch(session.user.tenantId, session.user.role);

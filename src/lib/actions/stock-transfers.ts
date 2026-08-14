@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma, runInTenantTransaction } from "@/lib/prisma";
-import { requireRole, requireSession } from "@/lib/rbac";
+import { requireRole, requireRetailSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
 import { resolveConcreteBranch, resolveSelectedBranch } from "@/lib/branch-scope";
 import { serializeItem, serializeBatch } from "@/lib/serialize";
@@ -16,7 +16,7 @@ import { serializeItem, serializeBatch } from "@/lib/serialize";
  * StockTransferStatus enum comment in schema.prisma.
  */
 export async function listStockTransfers() {
-  const session = await requireSession();
+  const session = await requireRetailSession();
   const scope = await resolveSelectedBranch(session.user.tenantId, session.user.role);
 
   const transfers = await prisma.stockTransfer.findMany({
@@ -58,7 +58,7 @@ export async function listStockTransfers() {
 
 /** Stock available at a specific branch (not necessarily the currently-selected one) — for the "request from" picker. */
 export async function getBranchStock(branchId: string) {
-  const session = await requireSession();
+  const session = await requireRetailSession();
   const branch = await prisma.branch.findFirst({
     where: { id: branchId, tenantId: session.user.tenantId },
   });
@@ -90,7 +90,7 @@ const createTransferSchema = z.object({
 export type CreateStockTransferInput = z.infer<typeof createTransferSchema>;
 
 export async function createStockTransferRequest(input: CreateStockTransferInput) {
-  const session = await requireSession();
+  const session = await requireRetailSession();
   const parsed = createTransferSchema.parse(input);
   const tenantId = session.user.tenantId;
 
@@ -147,7 +147,7 @@ export async function createStockTransferRequest(input: CreateStockTransferInput
 }
 
 export async function approveStockTransfer(transferId: string) {
-  const session = await requireRole(["owner", "pharmacist"]);
+  const session = await requireRole(["owner", "pharmacist", "ward_pharmacist"]);
   const tenantId = session.user.tenantId;
 
   const transfer = await prisma.stockTransfer.findFirst({
@@ -226,7 +226,7 @@ export async function approveStockTransfer(transferId: string) {
 }
 
 export async function rejectStockTransfer(transferId: string) {
-  const session = await requireRole(["owner", "pharmacist"]);
+  const session = await requireRole(["owner", "pharmacist", "ward_pharmacist"]);
   const tenantId = session.user.tenantId;
 
   const transfer = await prisma.stockTransfer.findFirst({ where: { id: transferId, tenantId } });

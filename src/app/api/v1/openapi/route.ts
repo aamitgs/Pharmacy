@@ -10,7 +10,7 @@ const OPENAPI_SPEC = {
     title: "Pharmacy Billing Public API",
     version: "1.0.0",
     description:
-      "Read-only access to invoices, stock, and customers, plus a narrow create-sale endpoint for headless integrations. Authenticate with an API key generated in Settings > API, sent as `Authorization: Bearer <key>`.",
+      "Read-only access to invoices, stock, and customers, a narrow create-sale endpoint for headless integrations, and (hospital-mode tenants only) endpoints for an external HIS to push patient admissions and pull ward stock/consumption. Authenticate with an API key generated in Settings > API, sent as `Authorization: Bearer <key>`.",
   },
   servers: [{ url: "/api/v1" }],
   components: {
@@ -62,6 +62,25 @@ const OPENAPI_SPEC = {
           phone: { type: "string", nullable: true },
           creditLimit: { type: "number", nullable: true },
           outstandingBalance: { type: "number" },
+        },
+      },
+      Ward: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          name: { type: "string" },
+          type: { type: "string", enum: ["icu", "ot", "general", "pharmacy_substore"] },
+          branchId: { type: "string" },
+        },
+      },
+      UpsertAdmissionRequest: {
+        type: "object",
+        required: ["admissionRef", "patientName", "wardId"],
+        properties: {
+          admissionRef: { type: "string", description: "Your HIS's own admission reference — used as the upsert key." },
+          patientName: { type: "string" },
+          wardId: { type: "string" },
+          dischargedAt: { type: "string", format: "date-time", nullable: true, description: "Set to mark/update a discharge; omit to leave unchanged." },
         },
       },
       CreateSaleRequest: {
@@ -148,6 +167,68 @@ const OPENAPI_SPEC = {
           "201": { description: "Created" },
           "400": { description: "Validation error" },
           "429": { description: "Rate limited — 60 requests/minute per key" },
+        },
+      },
+    },
+    "/wards": {
+      get: {
+        summary: "List wards (hospital-mode tenants only) — map your own ward codes to these ids",
+        responses: {
+          "200": {
+            description: "OK",
+            content: { "application/json": { schema: { type: "object", properties: { data: { type: "array", items: { $ref: "#/components/schemas/Ward" } } } } } },
+          },
+          "403": { description: "Not a hospital-mode tenant" },
+        },
+      },
+    },
+    "/wards/{id}/stock": {
+      get: {
+        summary: "Current stock at a ward",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "OK" },
+          "404": { description: "Not found" },
+          "403": { description: "Not a hospital-mode tenant" },
+        },
+      },
+    },
+    "/wards/{id}/consumption": {
+      get: {
+        summary: "Recent IPD dispenses at a ward, across all admissions",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" } },
+          { name: "limit", in: "query", schema: { type: "integer", default: 100, maximum: 500 } },
+        ],
+        responses: {
+          "200": { description: "OK" },
+          "404": { description: "Not found" },
+          "403": { description: "Not a hospital-mode tenant" },
+        },
+      },
+    },
+    "/admissions": {
+      post: {
+        summary: "Create or update a patient admission, keyed by your own admissionRef (hospital-mode tenants only)",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/UpsertAdmissionRequest" } } },
+        },
+        responses: {
+          "201": { description: "Created/updated" },
+          "400": { description: "Validation error" },
+          "403": { description: "Not a hospital-mode tenant" },
+        },
+      },
+    },
+    "/admissions/{ref}": {
+      get: {
+        summary: "Consumption/charges for one admission (by your own admissionRef) — what an external HIS builds its bill from",
+        parameters: [{ name: "ref", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "OK" },
+          "404": { description: "Not found" },
+          "403": { description: "Not a hospital-mode tenant" },
         },
       },
     },

@@ -25,6 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         logoUrl: tenant?.logoUrl ?? null,
         primaryColor: tenant?.primaryColor ?? null,
         showPoweredBy,
+        tenantType: tenant?.tenantType,
       }}
       branchScope={branchScope}
     >

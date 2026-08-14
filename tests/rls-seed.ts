@@ -259,6 +259,59 @@ export async function seedTenantSlice(suffix: string) {
       data: { id: `apikey-${suffix}`, tenantId: tenant.id, name: "Test key", keyHash: `hash-${suffix}`, keyPrefix: "phk_test" },
     });
 
+    // Phase 7: Hospital Mode fixtures — one full vertical slice, same as
+    // everything above.
+    const ward = await tx.ward.create({
+      data: { id: `ward-${suffix}`, tenantId: tenant.id, branchId: branch.id, name: `Ward ${suffix}`, type: "general" },
+    });
+
+    const wardBatch = await tx.batch.create({
+      data: {
+        id: `wbatch-${suffix}`,
+        itemId: item.id,
+        branchId: branch.id,
+        wardId: ward.id,
+        batchNo: `WB-${suffix}`,
+        expiryDate: new Date("2027-01-01"),
+        mrp: 100,
+        purchaseRate: 60,
+        saleRate: 90,
+        currentQty: 20,
+      },
+    });
+
+    const wardAssignment = await tx.wardAssignment.create({
+      data: { id: `wa-${suffix}`, tenantId: tenant.id, userId: owner.id, wardId: ward.id },
+    });
+
+    const indent = await tx.indent.create({
+      data: { id: `indent-${suffix}`, tenantId: tenant.id, wardId: ward.id, requestedByUserId: owner.id },
+    });
+    const indentItem = await tx.indentItem.create({
+      data: { id: `indenti-${suffix}`, indentId: indent.id, itemId: item.id, batchId: batch.id, qtyRequested: 5 },
+    });
+
+    const patientAdmission = await tx.patientAdmission.create({
+      data: {
+        id: `adm-${suffix}`,
+        tenantId: tenant.id,
+        admissionRef: `ADM-${suffix}`,
+        patientName: `Patient ${suffix}`,
+        wardId: ward.id,
+      },
+    });
+    const ipdDispense = await tx.ipdDispense.create({
+      data: {
+        id: `ipd-${suffix}`,
+        tenantId: tenant.id,
+        admissionId: patientAdmission.id,
+        itemId: item.id,
+        batchId: wardBatch.id,
+        qty: 2,
+        dispensedByUserId: owner.id,
+      },
+    });
+
     return {
       tenantId: tenant.id,
       branchId: branch.id,
@@ -291,6 +344,13 @@ export async function seedTenantSlice(suffix: string) {
       backupLogId: backupLog.id,
       tenantSubscriptionId: tenantSubscription.id,
       apiKeyId: apiKey.id,
+      wardId: ward.id,
+      wardBatchId: wardBatch.id,
+      wardAssignmentId: wardAssignment.id,
+      indentId: indent.id,
+      indentItemId: indentItem.id,
+      patientAdmissionId: patientAdmission.id,
+      ipdDispenseId: ipdDispense.id,
     };
   });
 }
@@ -302,6 +362,12 @@ export async function deleteTenant(tenantId: string) {
   // explicitly first or the cascade hits a foreign key violation.
   await basePrisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.rls_bypass', 'true', true)`;
+    // patientAdmission delete cascades ipd_dispenses (which RESTRICT-block
+    // batch deletion below); indent delete cascades indent_items. Both must
+    // also clear before wards, since indents/patient_admissions -> wards is
+    // RESTRICT, not CASCADE.
+    await tx.patientAdmission.deleteMany({ where: { tenantId } });
+    await tx.indent.deleteMany({ where: { tenantId } });
     await tx.narcoticRegisterEntry.deleteMany({ where: { tenantId } });
     await tx.discount.deleteMany({ where: { tenantId } });
     await tx.salesInvoiceItem.deleteMany({ where: { invoice: { tenantId } } });

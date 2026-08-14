@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { requireRole, requireSession } from "@/lib/rbac";
+import { requireRole, requireRetailSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
 import { serializePurchaseOrderItem, serializeSupplier } from "@/lib/serialize";
 import { getBranchFilter, resolveConcreteBranch } from "@/lib/branch-scope";
@@ -22,7 +22,7 @@ const poSchema = z.object({
 export type PurchaseOrderInput = z.infer<typeof poSchema>;
 
 export async function listPurchaseOrders() {
-  const session = await requireSession();
+  const session = await requireRetailSession();
   const branchFilter = await getBranchFilter(session.user.tenantId, session.user.role);
   const orders = await prisma.purchaseOrder.findMany({
     where: { tenantId: session.user.tenantId, ...branchFilter },
@@ -41,7 +41,7 @@ export async function listPurchaseOrders() {
 }
 
 export async function getPurchaseOrder(id: string) {
-  const session = await requireSession();
+  const session = await requireRetailSession();
   const po = await prisma.purchaseOrder.findFirst({
     where: { id, tenantId: session.user.tenantId },
     include: {
@@ -74,7 +74,7 @@ export async function getPurchaseOrder(id: string) {
  * option instead of silently falling back to "No PO" in the dropdown.
  */
 export async function listOpenPurchaseOrdersForSupplier(supplierId: string, includePoId?: string) {
-  const session = await requireSession();
+  const session = await requireRetailSession();
   // Scoped to the branch a GRN would actually be received into — a PO
   // placed by another branch isn't something this GRN should link to.
   const branchId = await resolveConcreteBranch(session.user.tenantId, session.user.role);
@@ -97,7 +97,7 @@ export async function listOpenPurchaseOrdersForSupplier(supplierId: string, incl
 }
 
 export async function createPurchaseOrder(input: PurchaseOrderInput) {
-  const session = await requireRole(["owner", "pharmacist"]);
+  const session = await requireRole(["owner", "pharmacist", "ward_pharmacist"]);
   const parsed = poSchema.parse(input);
 
   const supplier = await prisma.supplier.findFirst({
@@ -144,7 +144,7 @@ export async function createPurchaseOrder(input: PurchaseOrderInput) {
 const statusSchema = z.enum(["draft", "sent", "received", "cancelled"]);
 
 export async function updatePurchaseOrderStatus(id: string, status: z.infer<typeof statusSchema>) {
-  const session = await requireRole(["owner", "pharmacist"]);
+  const session = await requireRole(["owner", "pharmacist", "ward_pharmacist"]);
   const parsedStatus = statusSchema.parse(status);
 
   const before = await prisma.purchaseOrder.findFirst({

@@ -37,6 +37,9 @@ const signUpSchema = z.object({
   email: z.string().trim().toLowerCase().email("Enter a valid email"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   licensedAddress: z.string().trim().min(2, "Branch address is required"),
+  // Phase 7: what unlocks Hospital Mode (Ward/Indent/Admission/IPD screens)
+  // for this tenant — see the Tenant.tenantType comment in schema.prisma.
+  tenantType: z.enum(["retail", "hospital"]).default("retail"),
 });
 
 export type SignUpInput = z.infer<typeof signUpSchema>;
@@ -62,7 +65,7 @@ export async function signUpTenant(input: SignUpInput) {
     if (!trialPlan) throw new Error("Signup is temporarily unavailable — no trial plan configured.");
 
     const tenant = await tx.tenant.create({
-      data: { pharmacyName: parsed.pharmacyName },
+      data: { pharmacyName: parsed.pharmacyName, tenantType: parsed.tenantType },
     });
     await tx.branch.create({
       data: { tenantId: tenant.id, name: "Main Branch", licensedAddress: parsed.licensedAddress },

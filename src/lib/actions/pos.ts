@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import type { UserRole } from "@/generated/prisma/client";
 import { prisma, runInTenantTransaction } from "@/lib/prisma";
-import { requireSession } from "@/lib/rbac";
+import { requireRetailSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
 import {
   computeBilling,
@@ -25,7 +25,7 @@ import { shouldShowPoweredBy } from "@/lib/branding";
 const REQUIRES_PRESCRIPTION: readonly string[] = ["H", "H1", "X"];
 
 export async function getPosData() {
-  const session = await requireSession();
+  const session = await requireRetailSession();
   const tenantId = session.user.tenantId;
 
   // POS always bills against one concrete branch's stock — never "all
@@ -98,13 +98,16 @@ export async function getPosData() {
 }
 
 export async function verifyManagerPin(pin: string) {
-  const session = await requireSession();
+  const session = await requireRetailSession();
   const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: session.user.tenantId } });
   if (!tenant.managerPinHash) return false;
   return bcrypt.compare(pin, tenant.managerPinHash);
 }
 
-const SIGNOFF_ROLES: readonly UserRole[] = ["pharmacist", "owner"];
+// ward_pharmacist reuses this exact permission (see rbac.ts / schema.prisma
+// UserRole comment) — a hospital's OPD/central pharmacist signs off
+// Schedule H/H1/X sales the same way a retail Pharmacist does.
+const SIGNOFF_ROLES: readonly UserRole[] = ["pharmacist", "owner", "ward_pharmacist"];
 
 /**
  * Optimistic check used to unlock the "Complete sale" button in the
@@ -113,7 +116,7 @@ const SIGNOFF_ROLES: readonly UserRole[] = ["pharmacist", "owner"];
  * belt-and-suspenders pattern checkDiscountCap uses for the manager PIN.
  */
 export async function verifyPharmacistCredentials(email: string, password: string) {
-  const session = await requireSession();
+  const session = await requireRetailSession();
   const user = await prisma.user.findFirst({
     where: { tenantId: session.user.tenantId, email, role: { in: [...SIGNOFF_ROLES] } },
   });
@@ -147,7 +150,7 @@ const quickDoctorSchema = z.object({
 });
 
 export async function quickAddDoctor(input: z.infer<typeof quickDoctorSchema>) {
-  const session = await requireSession();
+  const session = await requireRetailSession();
   const parsed = quickDoctorSchema.parse(input);
   const doctor = await prisma.doctor.create({
     data: { ...parsed, tenantId: session.user.tenantId },
@@ -208,7 +211,7 @@ async function checkDiscountCap(
 }
 
 export async function completeSale(input: CompleteSaleInput) {
-  const session = await requireSession();
+  const session = await requireRetailSession();
   const tenantId = session.user.tenantId;
   const parsed = completeSaleSchema.parse(input);
 

@@ -24,8 +24,28 @@ export async function requireRole(allowed: UserRole[]) {
   return session;
 }
 
-export const canViewPurchaseRate = (role: UserRole) => role === "owner" || role === "pharmacist";
-export const canEditItemMaster = (role: UserRole) => role === "owner" || role === "pharmacist";
+// Phase 7 (Hospital Mode): ward_nurse has no business on any of the
+// existing retail screens (billing, purchasing) — those predate Hospital
+// Mode and were written assuming every session could reach them, so this
+// is the one narrow retrofit rather than touching every action file.
+// ward_pharmacist *is* included — a hospital's OPD/central pharmacist runs
+// the same POS/purchasing screens a retail pharmacist does.
+const RETAIL_ROLES: UserRole[] = ["owner", "pharmacist", "counter_staff", "ward_pharmacist"];
+
+/** Same as requireSession, but excludes ward_nurse from retail billing/purchasing screens — server-side, not just a hidden nav item. */
+export async function requireRetailSession() {
+  const session = await requireSession();
+  if (!RETAIL_ROLES.includes(session.user.role)) {
+    throw new UnauthorizedError("This screen is not available for your role.");
+  }
+  return session;
+}
+
+// ward_pharmacist is treated identically to pharmacist everywhere below —
+// a hospital's central/OPD pharmacist, not a separate permission set (see
+// the UserRole enum comment in schema.prisma).
+export const canViewPurchaseRate = (role: UserRole) => role === "owner" || role === "pharmacist" || role === "ward_pharmacist";
+export const canEditItemMaster = (role: UserRole) => role === "owner" || role === "pharmacist" || role === "ward_pharmacist";
 export const canManageUsers = (role: UserRole) => role === "owner";
-export const canCancelInvoice = (role: UserRole) => role === "owner" || role === "pharmacist";
-export const canManageCompliance = (role: UserRole) => role === "owner" || role === "pharmacist";
+export const canCancelInvoice = (role: UserRole) => role === "owner" || role === "pharmacist" || role === "ward_pharmacist";
+export const canManageCompliance = (role: UserRole) => role === "owner" || role === "pharmacist" || role === "ward_pharmacist";

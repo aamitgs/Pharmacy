@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { setTenantSuspended, overrideTenantPlan } from "@/lib/actions/admin";
+import { setTenantSuspended, overrideTenantPlan, setTenantType } from "@/lib/actions/admin";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -14,16 +14,31 @@ export function TenantAdminControls({
   currentPlanCode,
   subscriptionStatus,
   plans,
+  tenantType,
 }: {
   tenantId: string;
   suspended: boolean;
   currentPlanCode: string | null;
   subscriptionStatus: string | null;
   plans: { code: string; name: string }[];
+  tenantType: string;
 }) {
   const [pending, startTransition] = useTransition();
   const [isSuspended, setIsSuspended] = useState(suspended);
   const [planCode, setPlanCode] = useState(currentPlanCode ?? "");
+  const [type, setType] = useState(tenantType);
+
+  function applyTenantType(value: string) {
+    setType(value);
+    startTransition(async () => {
+      try {
+        await setTenantType(tenantId, value as "retail" | "hospital");
+        toast.success("Account type updated");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Failed");
+      }
+    });
+  }
 
   function toggleSuspend() {
     startTransition(async () => {
@@ -76,6 +91,18 @@ export function TenantAdminControls({
                   {p.name}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-xs text-muted-foreground">Account type</p>
+          <Select value={type} onValueChange={applyTenantType} disabled={pending}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="retail">Retail</SelectItem>
+              <SelectItem value="hospital">Hospital</SelectItem>
             </SelectContent>
           </Select>
         </div>

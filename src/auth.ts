@@ -19,7 +19,10 @@ async function findUserForLogin(email: string) {
   return user;
 }
 
-const MFA_REQUIRED_ROLES = ["owner", "pharmacist"] as const;
+// ward_pharmacist carries the same Schedule H/H1/X sign-off authority as
+// pharmacist (see rbac.ts / schema.prisma UserRole comment), so it inherits
+// the same MFA requirement.
+const MFA_REQUIRED_ROLES = ["owner", "pharmacist", "ward_pharmacist"] as const;
 
 // signIn() with redirect:false surfaces this as `code`, not `error` (which
 // stays the fixed "CredentialsSignin" string) — see @auth/core/errors.js.

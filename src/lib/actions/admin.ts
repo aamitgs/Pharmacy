@@ -85,6 +85,16 @@ export async function setTenantSuspended(tenantId: string, suspended: boolean) {
   revalidatePath("/admin");
 }
 
+/** Support/ops override for a tenant created as the wrong type — e.g. a
+ * hospital that self-signed-up as retail. Self-service signup also sets
+ * this directly (see signUpTenant), this is the parity path for existing
+ * tenants, same as setTenantSuspended/overrideTenantPlan above. */
+export async function setTenantType(tenantId: string, tenantType: "retail" | "hospital") {
+  await requireSuperAdmin();
+  await withBypass((tx) => tx.tenant.update({ where: { id: tenantId }, data: { tenantType } }));
+  revalidatePath(`/admin/tenants/${tenantId}`);
+}
+
 export async function overrideTenantPlan(tenantId: string, planCode: string) {
   await requireSuperAdmin();
   await withBypass(async (tx) => {

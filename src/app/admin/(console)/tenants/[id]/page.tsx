@@ -55,6 +55,7 @@ export default async function AdminTenantDetailPage({ params }: { params: Promis
         currentPlanCode={tenant.subscription?.plan.code ?? null}
         subscriptionStatus={tenant.subscription?.status ?? null}
         plans={plans.map((p) => ({ code: p.code, name: p.name }))}
+        tenantType={tenant.tenantType}
       />
 
       <Card>

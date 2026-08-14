@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { prisma, runInTenantTransaction, tenantContext } from "@/lib/prisma";
 import { computeBilling, type BillingLineInput } from "@/lib/billing";
+import { ApiAuthError } from "@/lib/api-auth";
 
 const REQUIRES_PRESCRIPTION: readonly string[] = ["H", "H1", "X"];
 
@@ -217,5 +218,178 @@ export async function apiCreateSale(tenantId: string, input: unknown) {
 
       return { invoiceId: invoice.id, invoiceNo, total: billing.total };
     });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Hospital Mode (Phase 7) — a hospital's own separate HIS is meant to be
+// just one consumer of these, using the same key/docs pattern as everything
+// above; nothing here is specific to any particular integration.
+// ---------------------------------------------------------------------------
+
+async function requireHospitalApiTenant(tenantId: string): Promise<void> {
+  const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+  if (tenant.tenantType !== "hospital") {
+    throw new ApiAuthError("This endpoint is only available for hospital-mode tenants.", 403);
+  }
+}
+
+export async function apiListWards(tenantId: string) {
+  return asTenant(tenantId, async () => {
+    await requireHospitalApiTenant(tenantId);
+    const wards = await prisma.ward.findMany({ where: { tenantId }, orderBy: { name: "asc" } });
+    return wards.map((w) => ({ id: w.id, name: w.name, type: w.type, branchId: w.branchId }));
+  });
+}
+
+const upsertAdmissionSchema = z.object({
+  admissionRef: z.string().min(1),
+  patientName: z.string().min(1),
+  wardId: z.string().min(1),
+  // Pass an ISO timestamp to mark/update a discharge, null to clear one
+  // (re-admit), or omit to leave discharge status untouched on an update.
+  dischargedAt: z.string().datetime().nullable().optional(),
+});
+
+export type ApiUpsertAdmissionInput = z.infer<typeof upsertAdmissionSchema>;
+
+/** Create or update (by admissionRef) — lets an external HIS push admission
+ * data instead of the in-app manual-entry form doing the only writing. */
+export async function apiUpsertAdmission(tenantId: string, input: unknown) {
+  const parsed = upsertAdmissionSchema.parse(input);
+
+  return asTenant(tenantId, async () => {
+    await requireHospitalApiTenant(tenantId);
+
+    const ward = await prisma.ward.findFirst({ where: { id: parsed.wardId, tenantId } });
+    if (!ward) throw new Error("Invalid wardId");
+
+    const admission = await prisma.patientAdmission.upsert({
+      where: { tenantId_admissionRef: { tenantId, admissionRef: parsed.admissionRef } },
+      create: {
+        tenantId,
+        admissionRef: parsed.admissionRef,
+        patientName: parsed.patientName,
+        wardId: parsed.wardId,
+        dischargedAt: parsed.dischargedAt ? new Date(parsed.dischargedAt) : null,
+      },
+      update: {
+        patientName: parsed.patientName,
+        wardId: parsed.wardId,
+        ...(parsed.dischargedAt !== undefined
+          ? { dischargedAt: parsed.dischargedAt ? new Date(parsed.dischargedAt) : null }
+          : {}),
+      },
+    });
+
+    return { id: admission.id, admissionRef: admission.admissionRef };
+  });
+}
+
+/** Consumption/charges by admission — what an external HIS pulls to build
+ * the patient's actual hospital bill (this app never builds that bill
+ * itself). `rate` is the batch's own sale rate; `amount` is a convenience
+ * multiplication, not a computed invoice. */
+export async function apiGetAdmissionConsumption(tenantId: string, admissionRef: string) {
+  return asTenant(tenantId, async () => {
+    await requireHospitalApiTenant(tenantId);
+
+    const admission = await prisma.patientAdmission.findFirst({
+      where: { tenantId, admissionRef },
+      include: {
+        ward: { select: { name: true } },
+        dispenses: {
+          include: {
+            item: { select: { name: true, unit: true } },
+            batch: { select: { batchNo: true, saleRate: true } },
+          },
+          orderBy: { dispensedAt: "asc" },
+        },
+      },
+    });
+    if (!admission) return null;
+
+    return {
+      admissionRef: admission.admissionRef,
+      patientName: admission.patientName,
+      wardName: admission.ward.name,
+      admittedAt: admission.admittedAt,
+      dischargedAt: admission.dischargedAt,
+      consumption: admission.dispenses.map((d) => {
+        const rate = Number(d.batch.saleRate);
+        const netQty = d.qty - d.returnedQty;
+        return {
+          itemName: d.item.name,
+          unit: d.item.unit,
+          batchNo: d.batch.batchNo,
+          qty: d.qty,
+          returnedQty: d.returnedQty,
+          netQty,
+          rate,
+          amount: rate * netQty,
+          dispensedAt: d.dispensedAt,
+        };
+      }),
+    };
+  });
+}
+
+export async function apiGetWardStock(tenantId: string, wardId: string) {
+  return asTenant(tenantId, async () => {
+    await requireHospitalApiTenant(tenantId);
+
+    const ward = await prisma.ward.findFirst({ where: { id: wardId, tenantId } });
+    if (!ward) return null;
+
+    const batches = await prisma.batch.findMany({
+      where: { wardId, currentQty: { gt: 0 } },
+      include: { item: { select: { name: true, unit: true } } },
+      orderBy: { expiryDate: "asc" },
+    });
+
+    return {
+      wardId: ward.id,
+      wardName: ward.name,
+      stock: batches.map((b) => ({
+        itemName: b.item.name,
+        unit: b.item.unit,
+        batchNo: b.batchNo,
+        expiryDate: b.expiryDate,
+        qty: b.currentQty,
+      })),
+    };
+  });
+}
+
+export async function apiGetWardConsumption(tenantId: string, wardId: string, params: { limit: number }) {
+  return asTenant(tenantId, async () => {
+    await requireHospitalApiTenant(tenantId);
+
+    const ward = await prisma.ward.findFirst({ where: { id: wardId, tenantId } });
+    if (!ward) return null;
+
+    const dispenses = await prisma.ipdDispense.findMany({
+      where: { tenantId, admission: { wardId } },
+      include: {
+        item: { select: { name: true, unit: true } },
+        admission: { select: { admissionRef: true, patientName: true } },
+      },
+      orderBy: { dispensedAt: "desc" },
+      take: params.limit,
+    });
+
+    return {
+      wardId: ward.id,
+      wardName: ward.name,
+      consumption: dispenses.map((d) => ({
+        admissionRef: d.admission.admissionRef,
+        patientName: d.admission.patientName,
+        itemName: d.item.name,
+        unit: d.item.unit,
+        qty: d.qty,
+        returnedQty: d.returnedQty,
+        dispensedAt: d.dispensedAt,
+      })),
+    };
   });
 }
