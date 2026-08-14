@@ -188,16 +188,18 @@ const completeSaleSchema = z.object({
 export type CompleteSaleInput = z.infer<typeof completeSaleSchema>;
 
 
+/** Takes the tenant's discount-cap fields directly rather than a tenantId —
+ * called once per cart line plus once for the bill discount, and a cart can
+ * easily have a dozen lines, so the caller fetches the tenant once upfront
+ * instead of this doing its own lookup on every call. */
 async function checkDiscountCap(
-  tenantId: string,
+  tenant: { staffDiscountCapPercent: number; managerPinHash: string | null },
   role: string,
   percent: number,
   managerPin: string | undefined
 ) {
   if (role !== "counter_staff") return;
-  const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
-  const cap = Number(tenant.staffDiscountCapPercent);
-  if (percent <= cap) return;
+  if (percent <= tenant.staffDiscountCapPercent) return;
   if (!managerPin || !tenant.managerPinHash) {
     throw new Error("MANAGER_PIN_REQUIRED");
   }
@@ -338,17 +340,26 @@ export async function completeSale(input: CompleteSaleInput) {
   // Discount-cap check, defense in depth (client already gates this).
   // Only the manual item/bill discounts are staff decisions subject to the
   // cap — scheme/loyalty/coupon discounts are system-applied, not entered
-  // by staff, so they're excluded from the PIN-override check.
-  for (let i = 0; i < parsed.lines.length; i++) {
-    await checkDiscountCap(
-      tenantId,
-      session.user.role,
-      parsed.lines[i].discountPercent,
-      parsed.managerPin
-    );
+  // by staff, so they're excluded from the PIN-override check. Tenant is
+  // fetched once here rather than once per checkDiscountCap call — a cart
+  // can easily have a dozen lines.
+  let discountCapTenant: { staffDiscountCapPercent: number; managerPinHash: string | null } | null = null;
+  if (session.user.role === "counter_staff") {
+    const t = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+    discountCapTenant = { staffDiscountCapPercent: Number(t.staffDiscountCapPercent), managerPinHash: t.managerPinHash };
   }
-  const billDiscountPercent = effectiveDiscountPercent(parsed.billDiscount, billing.subtotal);
-  await checkDiscountCap(tenantId, session.user.role, billDiscountPercent, parsed.managerPin);
+  if (discountCapTenant) {
+    for (let i = 0; i < parsed.lines.length; i++) {
+      await checkDiscountCap(
+        discountCapTenant,
+        session.user.role,
+        parsed.lines[i].discountPercent,
+        parsed.managerPin
+      );
+    }
+    const billDiscountPercent = effectiveDiscountPercent(parsed.billDiscount, billing.subtotal);
+    await checkDiscountCap(discountCapTenant, session.user.role, billDiscountPercent, parsed.managerPin);
+  }
 
   const now = new Date();
   const monthKey = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;

@@ -16,13 +16,22 @@ import {
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { IMPORT_FIELDS, type ImportFieldKey } from "@/lib/import/fields";
-import { mapRows, type ColumnMapping } from "@/lib/import/normalize";
+import { mapRows, type ColumnMapping, type NormalizedRow } from "@/lib/import/normalize";
 import { validateRows, type ValidationSummary } from "@/lib/import/validate";
+import { parseMargCsv } from "@/lib/import/marg-parser";
+import { parseVyaparCsv } from "@/lib/import/vyapar-parser";
 import { commitImport } from "@/lib/actions/import";
 import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
 import { toast } from "sonner";
 
 type Step = "upload" | "map" | "preview" | "done";
+type SourceFormat = "generic" | "marg" | "vyapar";
+
+const FORMAT_LABELS: Record<SourceFormat, string> = {
+  generic: "Standard CSV (choose your own columns)",
+  marg: "Marg stock/item export",
+  vyapar: "Vyapar item export",
+};
 
 function guessColumn(headers: string[], key: ImportFieldKey, label: string) {
   const needle = [key, label].map((s) => s.toLowerCase().replace(/[^a-z0-9]/g, ""));
@@ -33,19 +42,24 @@ function guessColumn(headers: string[], key: ImportFieldKey, label: string) {
 }
 
 export function ImportPanel() {
+  const [format, setFormat] = useState<SourceFormat>("generic");
   const [step, setStep] = useState<Step>("upload");
   const [headers, setHeaders] = useState<string[]>([]);
   const [rawRows, setRawRows] = useState<Record<string, string>[]>([]);
   const [mapping, setMapping] = useState<ColumnMapping>({});
+  // Set only for the Marg/Vyapar paths, which skip manual column mapping
+  // entirely — see fields.ts's comment on why a pre-parser can hand rows
+  // straight to validateRows in this same NormalizedRow shape.
+  const [preParsedRows, setPreParsedRows] = useState<NormalizedRow[] | null>(null);
   const [fileName, setFileName] = useState("");
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<Awaited<ReturnType<typeof commitImport>> | null>(null);
 
   const summary: ValidationSummary | null = useMemo(() => {
     if (step !== "preview" && step !== "done") return null;
-    const normalized = mapRows(rawRows, mapping);
+    const normalized = preParsedRows ?? mapRows(rawRows, mapping);
     return validateRows(normalized);
-  }, [step, rawRows, mapping]);
+  }, [step, rawRows, mapping, preParsedRows]);
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -56,8 +70,20 @@ export function ImportPanel() {
       skipEmptyLines: true,
       complete: (results) => {
         const cols = results.meta.fields ?? [];
+        const rows = results.data;
         setHeaders(cols);
-        setRawRows(results.data);
+        setRawRows(rows);
+
+        if (format === "marg") {
+          setPreParsedRows(parseMargCsv(rows));
+          setStep("preview");
+          return;
+        }
+        if (format === "vyapar") {
+          setPreParsedRows(parseVyaparCsv(rows));
+          setStep("preview");
+          return;
+        }
 
         const autoMapping: ColumnMapping = {};
         for (const field of IMPORT_FIELDS) {
@@ -73,7 +99,7 @@ export function ImportPanel() {
 
   function commit() {
     if (!summary) return;
-    const normalized = mapRows(rawRows, mapping);
+    const normalized = preParsedRows ?? mapRows(rawRows, mapping);
     startTransition(async () => {
       try {
         const res = await commitImport(normalized);
@@ -91,6 +117,7 @@ export function ImportPanel() {
     setHeaders([]);
     setRawRows([]);
     setMapping({});
+    setPreParsedRows(null);
     setFileName("");
     setResult(null);
   }
@@ -106,11 +133,35 @@ export function ImportPanel() {
       </div>
 
       {step === "upload" && (
-        <label className="flex h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-sm text-muted-foreground hover:bg-muted/30">
-          <UploadCloud className="h-6 w-6" />
-          Click to choose a .csv file
-          <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleFile} />
-        </label>
+        <div className="space-y-3">
+          <div className="max-w-xs space-y-1.5">
+            <Label className="text-xs">Export format</Label>
+            <Select value={format} onValueChange={(v) => setFormat(v as SourceFormat)}>
+              <SelectTrigger className="h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(FORMAT_LABELS) as SourceFormat[]).map((f) => (
+                  <SelectItem key={f} value={f}>
+                    {FORMAT_LABELS[f]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {format !== "generic" && (
+              <p className="text-xs text-muted-foreground">
+                Columns are recognized automatically — you&apos;ll go straight to the validation
+                preview. Batch expiry dates that don&apos;t match a recognized format are flagged,
+                never guessed.
+              </p>
+            )}
+          </div>
+          <label className="flex h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-sm text-muted-foreground hover:bg-muted/30">
+            <UploadCloud className="h-6 w-6" />
+            Click to choose a .csv file
+            <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleFile} />
+          </label>
+        </div>
       )}
 
       {step === "map" && (
@@ -222,8 +273,8 @@ export function ImportPanel() {
               {pending && <Loader2 className="h-4 w-4 animate-spin" />}
               Import {summary.validCount} row{summary.validCount === 1 ? "" : "s"}
             </Button>
-            <Button variant="outline" onClick={() => setStep("map")}>
-              Back to mapping
+            <Button variant="outline" onClick={() => (preParsedRows ? reset() : setStep("map"))}>
+              {preParsedRows ? "Start over" : "Back to mapping"}
             </Button>
           </div>
         </div>

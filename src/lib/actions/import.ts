@@ -24,13 +24,21 @@ export async function commitImport(rows: NormalizedRow[]) {
   let itemsUpdated = 0;
   let batchesCreated = 0;
 
+  // One batch lookup instead of one findFirst per row — a Marg/Vyapar
+  // export can easily be several hundred rows, and this previously issued
+  // a separate query per row just to check whether the item already
+  // existed.
+  const existingItems = await prisma.item.findMany({
+    where: { tenantId, name: { in: validRows.map((r) => r.raw.name!.trim()), mode: "insensitive" } },
+    select: { id: true, name: true },
+  });
+  const existingByName = new Map(existingItems.map((i) => [i.name.toLowerCase(), i]));
+
   for (const row of validRows) {
     const raw = row.raw;
     const name = raw.name!.trim();
 
-    const existing = await prisma.item.findFirst({
-      where: { tenantId, name: { equals: name, mode: "insensitive" } },
-    });
+    const existing = existingByName.get(name.toLowerCase());
 
     const scheduleClass =
       SCHEDULE_CLASSES.find((c) => c.toUpperCase() === raw.scheduleClass?.toUpperCase()) ?? "none";

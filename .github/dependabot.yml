@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # npm dependencies (this is a single-package repo, no workspaces)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      # Security patches land as their own small PRs; everything else is
+      # batched weekly so routine version bumps don't create dozens of
+      # individual PRs to review.
+      production-dependencies:
+        dependency-type: "production"
+        update-types: ["minor", "patch"]
+      development-dependencies:
+        dependency-type: "development"
+        update-types: ["minor", "patch"]
+
+  # The Dockerfile's base image, if/when one is added under docker/
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

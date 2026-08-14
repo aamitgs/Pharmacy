@@ -1,0 +1,51 @@
+name: Security scanning
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Catches newly-disclosed CVEs in already-approved dependencies, not
+    # just ones introduced by a new PR.
+    - cron: "0 6 * * 1"
+
+jobs:
+  npm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+      - run: npm ci
+      # Fails the job on any high/critical advisory. Moderate/low findings
+      # are reported but don't block — triage those manually via
+      # `npm audit` locally rather than blocking every PR on them.
+      - run: npm audit --audit-level=high
+
+  # Snyk needs a SNYK_TOKEN repository secret (from a Snyk account) to
+  # actually run — this job is intentionally structured to no-op cleanly
+  # when that secret isn't configured, rather than failing CI for repos
+  # that haven't set one up yet. Add the secret in
+  # Settings > Secrets and variables > Actions to enable it.
+  snyk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for SNYK_TOKEN
+        id: check
+        run: |
+          if [ -n "${{ secrets.SNYK_TOKEN }}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SNYK_TOKEN not set — skipping Snyk scan. See docs/security-audit-readiness.md."
+          fi
+      - name: Run Snyk
+        if: steps.check.outputs.configured == 'true'
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high

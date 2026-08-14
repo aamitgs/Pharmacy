@@ -109,7 +109,10 @@ restore flow yet.
   item import, and sale completion writes an `AuditLog` row with
   before/after values where applicable.
 - **SQL injection**: all data access goes through Prisma's parameterized
-  queries; there is no raw SQL in the application code.
+  queries. The only raw SQL in the codebase is `SELECT set_config(...)` calls
+  that set the Postgres session variables the Row-Level Security policies
+  check (see Multi-tenancy below) — always with a hardcoded statement and a
+  parameterized value, never string-interpolated user input.
 - **Backups**: encrypted at rest (AES-256-GCM) before being written to disk
   or sent to the browser — see [Restoring a backup](#restoring-a-backup).
 - **Session idle timeout**: configurable via `SESSION_IDLE_TIMEOUT_MINUTES`
@@ -272,22 +275,238 @@ Extends the Phase 1 billing flow with the supply side, without changing it:
   correctly (one of two queued sales for the same nearly-out-of-stock
   batch synced, the other flagged, stock never went negative).
 
+## Multi-tenancy & go-to-market (Phase 6)
+
+### Row-Level Security (real multi-tenancy, not just a column)
+
+Every table scoped by `tenantId` — 21 directly, plus 6 line-item tables
+scoped indirectly via an `EXISTS` subquery into their parent (`Batch`,
+`SalesInvoiceItem`, `PurchaseOrderItem`, `GrnItem`, `PurchaseReturnItem`,
+`StockTransferItem`) — now has a Postgres Row-Level Security policy, with
+`FORCE ROW LEVEL SECURITY` since the app connects as the table-owning role
+(which bypasses RLS by default otherwise). This is a **second, DB-enforced
+layer** on top of the application-layer `WHERE tenantId = ?` filtering that
+already existed — if a future code change ever forgets a tenant filter, the
+database itself still refuses to leak or accept cross-tenant rows. See
+`prisma/migrations/20260814000000_add_row_level_security/migration.sql`.
+
+Per-request tenant context is set via `SELECT set_config('app.current_tenant_id', ...)`
+inside a Prisma Client Extension (`src/lib/prisma.ts`), resolved from
+`auth()` — NextAuth's session lookup, reliably memoized per request by
+Next.js — rather than `AsyncLocalStorage`. An earlier design used
+`AsyncLocalStorage.enterWith()` from the shared `requireSession()`
+chokepoint, which looked simpler but was empirically wrong: a mutation made
+inside an awaited helper does not survive back to the awaiting caller,
+because the caller's post-await continuation captures its async context at
+the moment it *calls* the helper, not when the helper returns. Multi-step
+writes that must be atomic (`completeSale`, `createGrn`, purchase returns,
+stock transfers) use `runInTenantTransaction()` instead of
+`prisma.$transaction()` directly — wrapping an already-transactional query
+in a second implicit transaction was found to silently break atomicity (a
+rolled-back sale could leave its stock decrement committed).
+
+A narrow `app.rls_bypass` escape hatch, scoped per-transaction and never
+left set on a pooled connection, covers the few legitimate pre-tenant-
+context paths: the login email lookup, the seed script, the scheduled
+backup cron listing all tenants, and the Super-Admin console.
+
+**Test suite**: `tests/rls-isolation.test.ts` (`npm test`) seeds two full
+tenants — one row in every RLS-protected table — and asserts at the
+database level, not app logic, that: reads/writes/inserts can't cross a
+tenant boundary, `findMany` never leaks a row, the default with no tenant
+context is fail-closed even for the table-owning role, and the bypass
+mechanism trusted internal code relies on actually works. 82 tests total
+across that suite plus the Marg/Vyapar import-parsing tests below.
+
+### Self-service signup & onboarding
+
+`/signup` creates a fully isolated tenant (tenant + branch + owner user + a
+14-day free trial, no payment required) in one RLS-bypassed transaction —
+the one legitimate case for writing a `Tenant` row with no existing tenant
+context — then signs the owner in immediately. A first-run checklist on
+the dashboard (branch set up / items added / first sale made) is derived
+from real tenant data rather than a stored "onboarded" flag, and links
+straight to the existing CSV importer in Settings rather than duplicating
+it.
+
+### Subscription billing (Razorpay)
+
+`SubscriptionPlan` (a shared, unprotected catalog — no `tenantId`, so
+deliberately outside RLS, the same way a price list isn't "tenant data")
+and `TenantSubscription` (RLS-protected like everything else) back four
+seeded tiers: Free Trial, Growth, Premium, Enterprise (contact-sales only,
+no self-serve checkout). Settings > Billing shows the current plan, usage
+against its limits, and upgrade buttons. `checkPlanLimit()`
+(`src/lib/plan-limits.ts`) gates plan-capped actions — currently branch
+creation — with an actionable "upgrade to add more" message instead of a
+bare failure.
+
+Razorpay integration (`src/lib/razorpay/client.ts`) follows this app's
+established provider pattern (WhatsApp/GSP in Phase 5): plain `fetch` over
+the REST API, reporting "not configured" rather than crashing when
+`RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` are unset. A subscription's plan
+only actually switches on a signature-verified `/api/webhooks/razorpay`
+callback (HMAC-SHA256 over the raw request body against
+`RAZORPAY_WEBHOOK_SECRET`), never optimistically at checkout-start, since
+the customer can still abandon payment. **Not tested against a live
+Razorpay sandbox** — no credentials were available in the environment this
+was built in. What *was* verified: the webhook signature check (valid
+signature accepted, invalid rejected with 401) and the webhook-driven
+`trialing -> active` status transition, using a hand-crafted signed
+payload against a running instance of the app. Before going live: create
+one Razorpay Plan per priced tier (dashboard or `POST /v1/plans`), store
+the returned id on `SubscriptionPlan.razorpayPlanId`, and set the three
+env vars above.
+
+### Super-Admin console
+
+`/admin/*` uses a deliberately separate session mechanism from tenant
+users — a hand-rolled HMAC-signed cookie (`src/lib/admin-auth.ts`), not a
+second NextAuth instance, so the trust boundary is obvious and it never
+touches tenant RLS/session machinery. Lets platform staff list tenants,
+view a tenant's branches/users/invoice count, suspend/reactivate access,
+override a tenant's plan directly (for support cases, outside the normal
+Razorpay flow), and see a churn report (cancelled subscriptions + trials
+that expired unconverted). Suspension is enforced at login
+(`src/auth.ts`) independent of subscription status — it gates access
+entirely; billing gates usage. Seeded operator login:
+`admin@platform.local` / `PlatformAdmin@12345` — change this before any
+real deployment.
+
+### White-labeling
+
+A Branding settings tab (logo URL, primary color, receipt footer, live
+preview) is wired into the app shell sidebar and every printed/emailed
+receipt. The tiered "Powered by Pharmacy Billing" line
+(`src/lib/branding.ts`) is driven entirely by the tenant's current plan —
+never a manual toggle — so it can't be suppressed without actually being
+on a white-label plan. Custom domain + DNS verification (a real
+`_pharmacy-verify.<domain>` TXT lookup via Node's `dns.resolveTxt`, not a
+fake progress bar) is gated to white-label plans at the settings-action
+layer rather than the database, so a plan downgrade doesn't silently wipe
+a tenant's saved domain — it just stops them from re-verifying it.
+Actually pointing a custom domain at this app (reverse-proxy / DNS CNAME
+config) is a deployment-time step outside this repo's scope.
+
+### Public API (v1)
+
+`/api/v1/{invoices,stock,customers,sales}` plus `/api/v1/openapi` (a
+hand-written OpenAPI 3.0 spec). Auth is a SHA-256-hashed API key
+(`Authorization: Bearer phk_...`, shown once at creation in Settings >
+API), resolved the same way the login/webhook bootstrap cases are — the
+RLS bypass flag, scoped to one lookup transaction. Rate limiting is an
+in-memory sliding window, 60 requests/minute per key — **per-instance**,
+matching this app's documented single-process self-hosted deployment (see
+Scaling readiness below); it would need a shared store (Redis etc.) behind
+a load balancer running more than one instance.
+
+`POST /api/v1/sales` is deliberately narrower than the in-app POS screen:
+FEFO batch auto-selection, no prescription items (Schedule H/H1/X sales
+still need the POS UI's pharmacist sign-off — the API rejects them
+outright with a clear error), no discounts/schemes/coupons. That's a
+considered scope boundary, not a missing feature — a safe, correct v1
+surface for headless integrations (an e-commerce storefront, say) without
+reimplementing or risking the POS's full business-rule engine.
+
+### Scaling readiness
+
+**Load test**: 200 requests (20 concurrent workers x 10 sequential
+requests each) against `/api/v1/stock` on a `next dev` instance completed
+with zero non-rate-limit errors; p50 369ms, p95 872ms. Most of that per-
+request latency is dev-mode overhead (`next dev` compiles on demand and
+the RLS extension's `set_config` + query pattern is two round trips per
+call) — re-run against a production build (`npm run build && npm start`)
+for representative numbers before drawing capacity conclusions. 140/200
+requests correctly hit the 60/minute rate limit under that burst, which is
+the limiter working as designed, not a failure.
+
+**N+1 fixes made during this phase**: the CSV import commit path
+(`src/lib/actions/import.ts`) issued one `findFirst` query per row to
+check whether an item already existed — replaced with a single batch
+`findMany` before the loop, since the new Marg/Vyapar importers below make
+large (hundreds-of-rows) imports more likely. `completeSale`'s
+`checkDiscountCap` (`src/lib/actions/pos.ts`) re-fetched the tenant row
+once per cart line plus once for the bill discount — a cart with a dozen
+lines meant a dozen-plus redundant queries on the hottest path in the app;
+now fetched once and passed through.
+
+**Connection pooling**: this app uses a single `pg.Pool` per process via
+`@prisma/adapter-pg` (see `src/lib/prisma.ts`), sized by the driver's
+defaults. That's adequate for the single-process self-hosted deployment
+this repo ships (see the Docker section above) at low-to-moderate tenant
+counts. As tenant count and concurrent request volume grow, put
+[PgBouncer](https://www.pgbouncer.org/) (transaction-pooling mode) in
+front of Postgres and point `DATABASE_URL` at it instead — this
+particularly matters here because the RLS extension issues a `set_config`
++ query pair as an array-batched transaction on every non-interactive
+call, meaning connection acquisition happens on essentially every request;
+pooling at the Postgres level, not just the Node process level, is what
+absorbs that at scale. No PgBouncer config is checked into this repo — it's
+an infra-level decision for whoever operates a given deployment.
+
+**Caching**: no application-level cache (Redis, in-memory TTL cache, etc.)
+exists yet. The read-heavy public API endpoints (`/api/v1/stock` and
+`/api/v1/customers` especially) are the first candidates if/when query
+volume from external integrations warrants it — they're pure reads with
+no side effects, making them safe to cache with a short TTL keyed by
+tenant + query params.
+
+### Marg & Vyapar CSV importers
+
+`src/lib/import/marg-parser.ts` and `vyapar-parser.ts` are pre-parsers
+that recognize each tool's common export column names and feed the
+*existing* Phase 1 import pipeline (`src/lib/import/{fields,normalize,validate}.ts`)
+directly, in the same `NormalizedRow` shape the manual column-mapping step
+already produces — this was a deliberate seam left in that pipeline from
+Phase 1 specifically for this. Selecting "Marg" or "Vyapar" as the export
+format in Settings > Import/Export skips the manual mapping step and goes
+straight to the validation preview; there's no separate importer screen.
+
+**Expiry-date handling** (`src/lib/import/date-parse.ts`) is the part
+worth understanding if you're extending this: Indian day-first dates
+(`DD-MM-YYYY` / `DD/MM/YYYY`) are parsed with an explicit regex, never
+handed to `new Date(string)` — for an ambiguous date like `05/08/2026`,
+`new Date()` silently parses it as May 8th (US month-first) instead of
+5th August, which is wrong without ever raising an error. Marg's common
+convention of recording batch expiry as month/year only (e.g. `08/26`) is
+resolved deterministically to the *last day* of that month — an
+established pharma-industry convention for a month/year-only expiry, not a
+per-row guess. Anything that doesn't match either recognized pattern is
+left completely unchanged, so it visibly fails the existing "is this a
+valid date" validation and shows up as a flagged row in the preview table
+— never silently dropped, and never guessed. `tests/import-marg-vyapar.test.ts`
+locks down the ambiguous-date and unrecognized-format cases specifically.
+
+Both pre-parsers were verified against hand-built sample files matching
+each tool's typical export shape through the real running app (upload,
+preview showing correct flags, commit, resulting items/batches correct)
+— not just the unit tests. Real-world exports can vary by tool version;
+the column-alias lists in both parser files are the place to extend if a
+particular pharmacy's export doesn't auto-map.
+
+### Security audit readiness
+
+See [`docs/security-audit-readiness.md`](docs/security-audit-readiness.md)
+for CI dependency-scanning setup and — importantly — an explicit statement
+of what security testing has and has **not** been done on this codebase
+(no penetration test has been performed; this documents scope for one,
+not a substitute for one).
+
 ## Scope / what's not here
 
-Deliberately out of scope for Phases 1–3 (see the original build specs for
-the full lists): multi-tenant signup/billing, direct GST portal
-API/e-invoicing/e-way bill integration, purchase scheme tracking (treated
-as a manual rate adjustment, not a modeled entity), landed cost
-calculation (GRN rate is a flat per-unit rate), multi-branch transfers,
-supplier payment gateway/bank integration (manual ledger entry only),
-scheme/loyalty discounts, cloud backup, Marg/Vyapar importers, Hospital
-Mode, white-labeling beyond the basic logo/color/footer fields, AI
-features, real payment gateway integration, SMS/WhatsApp notifications,
-and multi-state GSTIN/IGST logic beyond the basic intra-state assumption.
-The CSV import pipeline (`src/lib/import/`) is structured in independent
-stages — parse → map → validate → commit — specifically so a
-platform-specific pre-parser could be dropped in ahead of
-`validate`/`commit` in a later phase without touching those two stages.
+Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,
+Marg/Vyapar importers, white-labeling beyond basic fields, a public API,
+real payment gateway integration — shipped in Phase 6 (see below). What's
+still deliberately out of scope, per that phase's own spec: Hospital Mode,
+AI-assisted features, a full self-serve SaaS billing-history UI (Settings >
+Billing shows the current plan and lets you switch — there's no invoice
+history/PDF receipts screen), and marketplace/accounting integrations.
+Also still out of scope from earlier phases: direct GST portal
+API integration beyond the GSP-compatible e-invoice/e-way bill provider
+(Phase 5), purchase scheme tracking (treated as a manual rate adjustment,
+not a modeled entity), landed cost calculation (GRN rate is a flat
+per-unit rate), and multi-state GSTIN/IGST logic beyond the basic
+intra-state assumption.
 
 ## Scripts
 
