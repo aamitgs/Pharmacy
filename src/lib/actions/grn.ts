@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { prisma, runInTenantTransaction } from "@/lib/prisma";
 import { requireRole, requireSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
 import { serializeGrnItem, serializeSupplier } from "@/lib/serialize";
@@ -102,7 +102,7 @@ export async function createGrn(input: GrnInput) {
 
   const total = parsed.items.reduce((sum, i) => sum + i.qty * i.rate, 0);
 
-  const grnId = await prisma.$transaction(async (tx) => {
+  const grnId = await runInTenantTransaction(async (tx) => {
     const grn = await tx.grn.create({
       data: {
         tenantId: session.user.tenantId,

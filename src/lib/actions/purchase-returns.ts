@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { prisma, runInTenantTransaction } from "@/lib/prisma";
 import { requireRole, requireSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
 import {
@@ -95,7 +95,7 @@ export async function createPurchaseReturn(input: PurchaseReturnInput) {
 
   const totalAmount = parsed.items.reduce((sum, i) => sum + i.qty * i.rate, 0);
 
-  const returnId = await prisma.$transaction(async (tx) => {
+  const returnId = await runInTenantTransaction(async (tx) => {
     for (const row of parsed.items) {
       // branchId scoped — a batch physically at another branch must never
       // be decremented by a return filed from this branch.

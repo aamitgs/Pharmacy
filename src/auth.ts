@@ -2,8 +2,22 @@ import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { authConfig } from "@/auth.config";
-import { prisma } from "@/lib/prisma";
+import { basePrisma, prisma, tenantContext } from "@/lib/prisma";
 import { verifyTotpCode } from "@/lib/totp";
+
+/**
+ * Login looks a user up by email before any tenant is known — the one
+ * legitimate case for reading across all tenants. Uses the unextended base
+ * client with the `app.rls_bypass` escape hatch scoped to a single batched
+ * transaction, never left set on the connection afterwards.
+ */
+async function findUserForLogin(email: string) {
+  const [, user] = await basePrisma.$transaction([
+    basePrisma.$executeRaw`SELECT set_config('app.rls_bypass', 'true', true)`,
+    basePrisma.user.findFirst({ where: { email } }),
+  ]);
+  return user;
+}
 
 const MFA_REQUIRED_ROLES = ["owner", "pharmacist"] as const;
 
@@ -34,7 +48,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         if (!email || !password) return null;
 
-        const user = await prisma.user.findFirst({ where: { email } });
+        const user = await findUserForLogin(email);
         if (!user) return null;
 
         const passwordValid = await bcrypt.compare(password, user.passwordHash);
@@ -76,7 +90,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       // Refresh the mfaSetupRequired flag after the user finishes MFA setup.
       if (trigger === "update" && token.id) {
-        const dbUser = await prisma.user.findUnique({ where: { id: token.id as string } });
+        // Must await *inside* the run() callback, not just return the
+        // (lazy, unstarted) PrismaPromise — Prisma defers the actual query
+        // dispatch until `.then()` is called, and if that happens outside
+        // run()'s synchronous scope the AsyncLocalStorage context is gone.
+        const dbUser = await tenantContext.run({ tenantId: token.tenantId as string }, async () => {
+          return await prisma.user.findUnique({ where: { id: token.id as string } });
+        });
         if (dbUser) {
           token.mfaSetupRequired =
             !dbUser.totpEnabled &&

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { prisma } from "@/lib/prisma";
+import { basePrisma, prisma, tenantContext } from "@/lib/prisma";
 import { encryptBackup } from "@/lib/backup-crypto";
 
 // Intended to be hit by an OS-level cron / scheduler (see README), not by a
@@ -17,20 +17,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const tenants = await prisma.tenant.findMany({ select: { id: true } });
+  // Listing every tenant is the one legitimate cross-tenant read here — the
+  // per-tenant export queries below each run under that specific tenant's
+  // own RLS context instead, since the tenantId is already known per
+  // iteration.
+  const [, tenants] = await basePrisma.$transaction([
+    basePrisma.$executeRaw`SELECT set_config('app.rls_bypass', 'true', true)`,
+    basePrisma.tenant.findMany({ select: { id: true } }),
+  ]);
   const results: { tenantId: string; ok: boolean }[] = [];
 
   for (const { id: tenantId } of tenants) {
     try {
-      const [tenant, branches, items, batches, customers, doctors, invoices] = await Promise.all([
-        prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } }),
-        prisma.branch.findMany({ where: { tenantId } }),
-        prisma.item.findMany({ where: { tenantId } }),
-        prisma.batch.findMany({ where: { item: { tenantId } } }),
-        prisma.customer.findMany({ where: { tenantId } }),
-        prisma.doctor.findMany({ where: { tenantId } }),
-        prisma.salesInvoice.findMany({ where: { tenantId }, include: { items: true, discounts: true } }),
-      ]);
+      const [tenant, branches, items, batches, customers, doctors, invoices] = await tenantContext.run(
+        { tenantId },
+        () =>
+          Promise.all([
+            prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } }),
+            prisma.branch.findMany({ where: { tenantId } }),
+            prisma.item.findMany({ where: { tenantId } }),
+            prisma.batch.findMany({ where: { item: { tenantId } } }),
+            prisma.customer.findMany({ where: { tenantId } }),
+            prisma.doctor.findMany({ where: { tenantId } }),
+            prisma.salesInvoice.findMany({ where: { tenantId }, include: { items: true, discounts: true } }),
+          ])
+      );
       const json = JSON.stringify({
         exportedAt: new Date().toISOString(),
         tenant,
@@ -48,10 +59,14 @@ export async function POST(req: NextRequest) {
       const filename = `pharmacy-backup-${tenantId}-${new Date().toISOString().replace(/[:.]/g, "-")}.enc`;
       await writeFile(path.join(dir, filename), encrypted);
 
-      await prisma.backupLog.create({ data: { tenantId, destination: "local", status: "success" } });
+      await tenantContext.run({ tenantId }, () =>
+        prisma.backupLog.create({ data: { tenantId, destination: "local", status: "success" } })
+      );
       results.push({ tenantId, ok: true });
     } catch {
-      await prisma.backupLog.create({ data: { tenantId, destination: "local", status: "failed" } });
+      await tenantContext.run({ tenantId }, () =>
+        prisma.backupLog.create({ data: { tenantId, destination: "local", status: "failed" } })
+      );
       results.push({ tenantId, ok: false });
     }
   }

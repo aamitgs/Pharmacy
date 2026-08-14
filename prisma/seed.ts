@@ -7,6 +7,10 @@ const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
+  // Trusted one-shot script that exits right after seeding — safe to set the
+  // RLS bypass flag at session level (is_local=false) instead of per-query.
+  await prisma.$executeRaw`SELECT set_config('app.rls_bypass', 'true', false)`;
+
   const tenant = await prisma.tenant.upsert({
     where: { id: "demo-tenant" },
     update: {},

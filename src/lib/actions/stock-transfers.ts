@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { prisma, runInTenantTransaction } from "@/lib/prisma";
 import { requireRole, requireSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
 import { resolveConcreteBranch, resolveSelectedBranch } from "@/lib/branch-scope";
@@ -157,7 +157,7 @@ export async function approveStockTransfer(transferId: string) {
   if (!transfer) throw new Error("Transfer not found");
   if (transfer.status !== "pending") throw new Error("This transfer has already been decided.");
 
-  await prisma.$transaction(async (tx) => {
+  await runInTenantTransaction(async (tx) => {
     for (const row of transfer.items) {
       const sourceBatch = await tx.batch.findFirst({
         where: { id: row.batchId, branchId: transfer.fromBranchId },
