@@ -18,6 +18,8 @@ import { resolveConcreteBranch } from "@/lib/branch-scope";
 import { applySchemes } from "@/lib/scheme-engine";
 import { listActiveSchemesForBilling } from "@/lib/actions/schemes";
 import { validateCoupon } from "@/lib/actions/coupons";
+import { computeCustomerOutstandingBalances } from "@/lib/actions/customers";
+import { runEinvoiceAttempt, runEwayBillAttemptForInvoice } from "@/lib/gsp/engine";
 
 const REQUIRES_PRESCRIPTION: readonly string[] = ["H", "H1", "X"];
 
@@ -29,7 +31,7 @@ export async function getPosData() {
   // branches" (Owner's consolidated view is for reporting, not billing).
   const branchId = await resolveConcreteBranch(tenantId, session.user.role);
 
-  const [items, customers, doctors, tenant, schemes] = await Promise.all([
+  const [items, customers, doctors, tenant, schemes, branch] = await Promise.all([
     prisma.item.findMany({
       where: { tenantId, batches: { some: { branchId: branchId ?? undefined, currentQty: { gt: 0 } } } },
       include: {
@@ -44,7 +46,10 @@ export async function getPosData() {
     prisma.doctor.findMany({ where: { tenantId }, orderBy: { name: "asc" } }),
     prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } }),
     listActiveSchemesForBilling(tenantId),
+    branchId ? prisma.branch.findUnique({ where: { id: branchId } }) : null,
   ]);
+
+  const balances = await computeCustomerOutstandingBalances(tenantId, customers.map((c) => c.id));
 
   return {
     items: items.map((item) => ({
@@ -56,15 +61,32 @@ export async function getPosData() {
       name: c.name,
       phone: c.phone,
       creditLimit: c.creditLimit ? Number(c.creditLimit) : null,
-      outstandingBalance: Number(c.outstandingBalance),
+      outstandingBalance: balances.get(c.id) ?? 0,
       loyaltyTierName: c.loyaltyTier?.name ?? null,
       loyaltyDiscountPercent: c.loyaltyTier ? Number(c.loyaltyTier.discountPercent) : 0,
     })),
     doctors,
     branchId,
+    tenantId,
     staffDiscountCapPercent: Number(tenant.staffDiscountCapPercent),
     role: session.user.role,
     schemes,
+    // Everything an offline-queued sale's locally-rendered receipt needs —
+    // cached client-side so printing never requires a server round-trip.
+    receiptHeader: {
+      tenant: { pharmacyName: tenant.pharmacyName, invoiceFooterText: tenant.invoiceFooterText },
+      branch: branch
+        ? {
+            name: branch.name,
+            licensedAddress: branch.licensedAddress,
+            gstin: branch.gstin,
+            drugLicenseRetailNo: branch.drugLicenseRetailNo,
+            drugLicenseWholesaleNo: branch.drugLicenseWholesaleNo,
+            pharmacistName: branch.pharmacistName,
+            pharmacistRegistrationNo: branch.pharmacistRegistrationNo,
+          }
+        : null,
+    },
   };
 }
 
@@ -149,6 +171,10 @@ const completeSaleSchema = z.object({
   managerPin: z.string().optional(),
   prescriptionImagePath: z.string().optional(),
   pharmacistReauth: z.object({ email: z.string().email(), password: z.string().min(1) }).optional(),
+  // Set only when this sale was queued while offline and is now syncing —
+  // lets a retried sync short-circuit to the already-created invoice
+  // instead of double-billing if the client never saw the first response.
+  offlineClientId: z.string().optional(),
   lines: z.array(saleLineSchema).min(1, "Cart is empty"),
 });
 
@@ -176,6 +202,14 @@ export async function completeSale(input: CompleteSaleInput) {
   const session = await requireSession();
   const tenantId = session.user.tenantId;
   const parsed = completeSaleSchema.parse(input);
+
+  if (parsed.offlineClientId) {
+    const existing = await prisma.salesInvoice.findFirst({
+      where: { tenantId, offlineClientId: parsed.offlineClientId },
+      select: { id: true, invoiceNo: true },
+    });
+    if (existing) return { invoiceId: existing.id, invoiceNo: existing.invoiceNo };
+  }
 
   // The upload endpoint always writes under `<sessionTenantId>/<uuid>.<ext>`.
   // Reject anything else so a client can't attach another tenant's
@@ -327,6 +361,7 @@ export async function completeSale(input: CompleteSaleInput) {
         patientName: parsed.patientName || null,
         patientAge: parsed.patientAge ?? null,
         invoiceNo,
+        offlineClientId: parsed.offlineClientId || null,
         subtotal: billing.subtotal,
         taxAmount: billing.taxAmount,
         discountAmount: billing.discountAmount,
@@ -489,11 +524,21 @@ export async function completeSale(input: CompleteSaleInput) {
     if (parsed.customerId) {
       const updated = await tx.customer.update({
         where: { id: parsed.customerId },
-        data: {
-          cumulativeSpend: { increment: billing.total },
-          ...(parsed.paymentMode === "credit" ? { outstandingBalance: { increment: billing.total } } : {}),
-        },
+        data: { cumulativeSpend: { increment: billing.total } },
       });
+
+      if (parsed.paymentMode === "credit") {
+        await tx.customerLedgerEntry.create({
+          data: {
+            tenantId,
+            customerId: parsed.customerId,
+            type: "sale",
+            amount: billing.total,
+            referenceId: invoice.id,
+            referenceType: "SalesInvoice",
+          },
+        });
+      }
 
       const tiers = await tx.loyaltyTier.findMany({
         where: { tenantId },
@@ -525,6 +570,15 @@ export async function completeSale(input: CompleteSaleInput) {
   revalidatePath("/invoices");
   revalidatePath("/dashboard");
   revalidatePath("/customers");
+
+  // Fire-and-forget: the counter transaction (sale saved, ready to print)
+  // is already complete and its response about to return. A slow or down
+  // GSP must never add latency here — this keeps running on the same
+  // long-lived Node process after the response is sent, and any failure is
+  // swallowed (retryable later from the receipt screen), never surfaced as
+  // a checkout error.
+  void runEinvoiceAttempt(result.id).catch(() => {});
+  void runEwayBillAttemptForInvoice(result.id).catch(() => {});
 
   return { invoiceId: result.id, invoiceNo: result.invoiceNo };
 }

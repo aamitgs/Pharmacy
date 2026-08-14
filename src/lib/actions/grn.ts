@@ -7,6 +7,7 @@ import { requireRole, requireSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
 import { serializeGrnItem, serializeSupplier } from "@/lib/serialize";
 import { getBranchFilter, resolveConcreteBranch } from "@/lib/branch-scope";
+import { runEwayBillAttemptForGrn } from "@/lib/gsp/engine";
 
 const grnItemSchema = z.object({
   itemId: z.string().min(1),
@@ -52,11 +53,14 @@ export async function getGrn(id: string) {
     where: { id, tenantId: session.user.tenantId },
     include: {
       supplier: true,
+      branch: true,
       receivedBy: { select: { name: true } },
       items: { include: { item: { select: { name: true, unit: true } } } },
     },
   });
   if (!grn) return null;
+
+  const total = grn.items.reduce((sum, i) => sum + i.qty * Number(i.rate), 0);
 
   return {
     id: grn.id,
@@ -66,6 +70,9 @@ export async function getGrn(id: string) {
     supplierInvoiceDate: grn.supplierInvoiceDate,
     receivedAt: grn.receivedAt,
     receivedByName: grn.receivedBy.name,
+    total,
+    ewayBillNo: grn.ewayBillNo,
+    ewayBillThreshold: Number(grn.branch.ewayBillThreshold),
     items: grn.items.map((i) => ({
       ...serializeGrnItem(i),
       itemName: i.item.name,
@@ -209,6 +216,10 @@ export async function createGrn(input: GrnInput) {
   revalidatePath("/dashboard");
   revalidatePath(`/suppliers/${parsed.supplierId}`);
   if (parsed.purchaseOrderId) revalidatePath(`/purchase-orders/${parsed.purchaseOrderId}`);
+
+  // Fire-and-forget, same as the POS e-way bill hook — never block GRN
+  // save on a third-party API call.
+  void runEwayBillAttemptForGrn(grnId).catch(() => {});
 
   return { id: grnId };
 }

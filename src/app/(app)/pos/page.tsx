@@ -13,6 +13,8 @@ export default async function PosPage() {
       staffDiscountCapPercent={data.staffDiscountCapPercent}
       role={data.role}
       schemes={data.schemes}
+      tenantId={data.tenantId}
+      receiptHeader={data.receiptHeader}
     />
   );
 }

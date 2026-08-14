@@ -1,5 +1,6 @@
 "use server";
 
+import QRCode from "qrcode";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/rbac";
 import { getBranchFilter } from "@/lib/branch-scope";
@@ -35,8 +36,16 @@ export async function getInvoiceForReceipt(id: string) {
     patientName: invoice.patientName,
     patientAge: invoice.patientAge,
     customer: invoice.customer
-      ? { name: invoice.customer.name, phone: invoice.customer.phone }
+      ? { id: invoice.customer.id, name: invoice.customer.name, phone: invoice.customer.phone }
       : null,
+    einvoiceIrn: invoice.einvoiceIrn,
+    einvoiceAckNo: invoice.einvoiceAckNo,
+    einvoiceQrImageDataUrl: invoice.einvoiceQrData
+      ? await QRCode.toDataURL(invoice.einvoiceQrData).catch(() => null)
+      : null,
+    ewayBillNo: invoice.ewayBillNo,
+    einvoiceEnabled: invoice.branch.einvoiceEnabled,
+    ewayBillThreshold: Number(invoice.branch.ewayBillThreshold),
     doctor: invoice.doctor
       ? { name: invoice.doctor.name, registrationNo: invoice.doctor.registrationNo }
       : null,

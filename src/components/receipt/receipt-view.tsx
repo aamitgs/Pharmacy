@@ -135,6 +135,27 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
         </div>
       )}
 
+      {data.einvoiceIrn && (
+        <>
+          <Divider />
+          <div className="text-center">
+            {data.einvoiceQrImageDataUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={data.einvoiceQrImageDataUrl}
+                alt="e-Invoice QR code"
+                className="mx-auto h-24 w-24"
+              />
+            )}
+            <div className="mt-1 text-[9px] break-all">IRN: {data.einvoiceIrn}</div>
+          </div>
+        </>
+      )}
+
+      {data.ewayBillNo && (
+        <div className="text-center text-[10px]">E-way bill: {data.ewayBillNo}</div>
+      )}
+
       {data.tenant.invoiceFooterText && (
         <>
           <Divider />

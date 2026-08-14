@@ -205,6 +205,73 @@ Extends the Phase 1 billing flow with the supply side, without changing it:
   warning, not a billing block — that's a deliberate business decision to
   revisit later, not an oversight.
 
+## Integrations & offline hardening (Phase 5)
+
+- **Credit customer ledger**: `Customer.outstandingBalance` is now a cache
+  column only — the real balance is `SUM(CustomerLedgerEntry.amount)`
+  (mirrors the Supplier ledger from Phase 2). Every credit sale writes a
+  `sale` entry; a customer detail page (`/customers/[id]`) lets staff
+  record `payment` entries and view a printable, CSV-exportable statement
+  of account (`/customers/[id]/statement`) with opening/closing balance.
+- **WhatsApp receipt/statement delivery**: uses
+  [Gupshup](https://www.gupshup.io/developer/docs/bot-platform/guide/whatsapp-api-documentation)'s
+  WhatsApp Business API. Set `GUPSHUP_API_KEY`, `GUPSHUP_SOURCE_NUMBER`, and
+  `GUPSHUP_APP_NAME` (see `.env.example`) — without them, the "Send via
+  WhatsApp" button (on the receipt and statement pages) reports "not
+  configured" instead of crashing, and every attempt is logged to
+  `WhatsAppLog` either way. **What's actually sent is a formatted text
+  summary, not a PDF/image attachment** — this app's other "PDF" exports
+  are all browser print-to-PDF (no server-side document rendering exists
+  anywhere in the codebase), so there's no pipeline to attach a receipt
+  image to a WhatsApp message yet. Adding one (headless rendering + hosting
+  the resulting file for Gupshup's document-message API) is a real,
+  reasonably-sized follow-up, not something faked here.
+- **E-invoice (IRN) & e-way bill generation**: against a GSP (GST Suvidha
+  Provider) API compatible with the NIC IRP schema most Indian GSPs
+  (ClearTax, MasterGST, Cygnet) wrap — set `GSP_BASE_URL`, `GSP_API_KEY`,
+  and `GSP_SELLER_GSTIN` (see `.env.example`) once a provider account is
+  provisioned; unset, generation attempts report "not configured".
+  E-invoicing is gated by a per-branch `einvoiceEnabled` toggle
+  (Branch edit screen) standing in for the turnover-threshold check, since
+  that threshold is government policy that changes over time, not a
+  constant to hardcode. E-way bill generation is gated by a configurable
+  per-branch value threshold (`ewayBillThreshold`, default ₹50,000) — value
+  only; distance-based thresholds aren't implemented since nothing in this
+  app calculates distance (no geocoding). Both calls are fire-and-forget
+  after the sale/GRN transaction already committed — never awaited by the
+  checkout or GRN-save response — so a slow or down GSP adds zero latency
+  to the counter. A failed attempt leaves the IRN/e-way bill number null;
+  a "Generate e-invoice" / "Generate e-way bill" button appears on the
+  receipt (and GRN detail) screen to retry manually. A successful IRN
+  renders as a QR code (via the `qrcode` package, same one used for MFA
+  setup) directly on the printed receipt.
+- **Offline-first POS billing**: scoped specifically to the billing screen
+  and printing, not the whole app. A `navigator.onLine`-plus-real-ping
+  check (`/api/health`) drives a persistent, unmissable status bar — never
+  a dismissible toast — showing "Offline — N bills pending sync." While
+  offline, item search keeps working off the already-loaded catalog
+  (backed by an IndexedDB cache, via Dexie, refreshed on load and every 3
+  minutes while online, so a long-open tab survives a reload mid-shift
+  too), and completing a sale writes it to an IndexedDB queue instead of
+  calling the server, immediately showing a locally-rendered, printable
+  receipt built entirely from client-side state — no round-trip. On
+  reconnection the queue replays automatically, in order, against the same
+  `completeSale` action used online (idempotent via a client-generated
+  `offlineClientId`, so a retried sync can't double-bill); a batch sold
+  below available stock by another terminal in the meantime surfaces as a
+  distinct "conflict" in the queue panel for manual reconciliation, never
+  silently oversold or dropped. **Deliberately blocked while offline**
+  (each needs a real-time server check that can't be safely approximated
+  from cached state): credit-mode sales (ledger validation), a discount
+  above the staff cap (manager PIN verification), and prescription sales
+  for non-pharmacist/owner roles (pharmacist re-auth) — each shows a clear
+  inline reason rather than silently failing or behaving unsafely. Live-
+  verified end to end via Playwright with `context.setOffline()`: item
+  search and cart entry while offline, the offline receipt overlay,
+  automatic sync on reconnection, and a real stock-conflict surfaced
+  correctly (one of two queued sales for the same nearly-out-of-stock
+  batch synced, the other flagged, stock never went negative).
+
 ## Scope / what's not here
 
 Deliberately out of scope for Phases 1–3 (see the original build specs for

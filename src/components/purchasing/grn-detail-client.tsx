@@ -4,6 +4,7 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { GrnEwayBillActions } from "@/components/einvoice/grn-ewaybill-actions";
 import { ChevronLeft, Printer } from "lucide-react";
 
 export type GrnDetail = {
@@ -14,6 +15,9 @@ export type GrnDetail = {
   supplierInvoiceDate: Date;
   receivedAt: Date;
   receivedByName: string;
+  total: number;
+  ewayBillNo: string | null;
+  ewayBillThreshold: number;
   items: {
     id: string;
     itemName: string;
@@ -56,6 +60,12 @@ export function GrnDetailClient({ grn, canEdit }: { grn: GrnDetail; canEdit: boo
           <Button size="sm" onClick={() => window.print()}>
             <Printer className="h-4 w-4" /> Print
           </Button>
+          <GrnEwayBillActions
+            grnId={grn.id}
+            total={total}
+            ewayBillThreshold={grn.ewayBillThreshold}
+            hasEwayBill={!!grn.ewayBillNo}
+          />
         </div>
       </div>
 
@@ -112,6 +122,9 @@ export function GrnDetailClient({ grn, canEdit }: { grn: GrnDetail; canEdit: boo
 
         <div className="text-right text-sm">
           Total: <span className="font-medium">₹{total.toFixed(2)}</span>
+          {grn.ewayBillNo && (
+            <div className="text-muted-foreground">E-way bill: {grn.ewayBillNo}</div>
+          )}
         </div>
       </div>
     </div>

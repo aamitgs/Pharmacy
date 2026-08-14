@@ -7,8 +7,16 @@ import type { UserRole } from "@/generated/prisma/client";
 import { useCartStore } from "@/store/cart-store";
 import { computeBilling, effectiveDiscountPercent, type BillingLineInput, type StackedDiscountInput } from "@/lib/billing";
 import { applySchemes } from "@/lib/scheme-engine";
-import { completeSale, verifyManagerPin, verifyPharmacistCredentials } from "@/lib/actions/pos";
+import { completeSale, getPosData, verifyManagerPin, verifyPharmacistCredentials } from "@/lib/actions/pos";
 import { validateCoupon } from "@/lib/actions/coupons";
+import { useOnlineStatus } from "@/hooks/use-online-status";
+import { saveCache, queueSale, listPendingSales, discardSale, newOfflineClientId } from "@/lib/offline/queue";
+import { syncPendingSales } from "@/lib/offline/sync";
+import { buildOfflineReceiptData } from "@/lib/offline/receipt";
+import type { PendingSale, ReceiptHeader } from "@/lib/offline/db";
+import type { ReceiptData } from "@/lib/actions/invoices";
+import { OfflineBanner } from "./offline-banner";
+import { OfflineReceiptOverlay } from "./offline-receipt-overlay";
 import { SearchPanel } from "./search-panel";
 import { CartTable } from "./cart-table";
 import { BottomBar } from "./bottom-bar";
@@ -34,6 +42,8 @@ export function PosScreen({
   staffDiscountCapPercent,
   role,
   schemes,
+  tenantId,
+  receiptHeader,
 }: {
   items: PosItem[];
   customers: PosCustomer[];
@@ -42,6 +52,8 @@ export function PosScreen({
   staffDiscountCapPercent: number;
   role: UserRole;
   schemes: PosScheme[];
+  tenantId: string;
+  receiptHeader: ReceiptHeader;
 }) {
   const router = useRouter();
   const store = useCartStore();
@@ -65,6 +77,87 @@ export function PosScreen({
     submitting: boolean;
   }>({ open: false, error: null, submitting: false });
   const pharmacistReauthRef = useRef<{ email: string; password: string } | undefined>(undefined);
+
+  const isOnline = useOnlineStatus();
+  const [pendingSales, setPendingSales] = useState<PendingSale[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [offlineReceipt, setOfflineReceipt] = useState<ReceiptData | null>(null);
+  const wasOnline = useRef(isOnline);
+
+  const refreshPendingSales = useCallback(async () => {
+    setPendingSales(await listPendingSales(tenantId));
+  }, [tenantId]);
+
+  const handleSync = useCallback(async () => {
+    setSyncing(true);
+    try {
+      const summary = await syncPendingSales(tenantId);
+      await refreshPendingSales();
+      if (summary.synced > 0) toast.success(`${summary.synced} offline bill${summary.synced === 1 ? "" : "s"} synced`);
+      if (summary.conflicts > 0) toast.error(`${summary.conflicts} offline bill${summary.conflicts === 1 ? "" : "s"} need review — stock changed while offline`);
+      if (summary.failed > 0) toast.error(`${summary.failed} offline bill${summary.failed === 1 ? "" : "s"} failed to sync — will retry`);
+    } finally {
+      setSyncing(false);
+    }
+  }, [tenantId, refreshPendingSales]);
+
+  // Cache what this session needs to keep billing (and printing) working
+  // offline. Writing this doesn't touch the live items/customers state
+  // rendered on screen — it's purely a background snapshot for the
+  // offline fallback path, so it can't destabilize the normal online flow.
+  useEffect(() => {
+    void saveCache({ tenantId, branchId, items, customers, doctors: doctorList, schemes, staffDiscountCapPercent, receiptHeader });
+  }, [tenantId, branchId, items, customers, doctorList, schemes, staffDiscountCapPercent, receiptHeader]);
+
+  // Keep the offline cache from going stale over a long shift, without
+  // touching the live rendered item list — a long-open POS tab should
+  // still have a reasonably fresh fallback if the network drops hours
+  // after page load.
+  useEffect(() => {
+    if (!isOnline) return;
+    const interval = setInterval(async () => {
+      try {
+        const fresh = await getPosData();
+        await saveCache({
+          tenantId,
+          branchId: fresh.branchId,
+          items: fresh.items,
+          customers: fresh.customers,
+          doctors: fresh.doctors,
+          schemes: fresh.schemes,
+          staffDiscountCapPercent: fresh.staffDiscountCapPercent,
+          receiptHeader: fresh.receiptHeader,
+        });
+      } catch {
+        // Best-effort background refresh — a failed attempt just means the
+        // existing cache stays as-is until the next interval.
+      }
+    }, 3 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [isOnline, tenantId, branchId]);
+
+  // Load the queue on mount (so the banner shows the right count even if
+  // offline from the very start), then sync if already online — and again
+  // whenever connectivity transitions back on.
+  const hasMounted = useRef(false);
+  useEffect(() => {
+    async function run() {
+      if (isOnline && (!hasMounted.current || !wasOnline.current)) {
+        await handleSync();
+      } else {
+        await refreshPendingSales();
+      }
+      hasMounted.current = true;
+      wasOnline.current = isOnline;
+    }
+    void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline]);
+
+  async function handleDiscardQueued(localId: string) {
+    await discardSale(localId);
+    await refreshPendingSales();
+  }
 
   const catalogByItemId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
 
@@ -124,8 +217,19 @@ export function PosScreen({
       }
     }
     if (!branchId) return "No branch configured for this pharmacy yet.";
+    // Offline-specific blocks — anything that needs a real-time server
+    // check (credit ledger validation, PIN/pharmacist verification) can't
+    // be safely approved from a cached, possibly-stale local state.
+    if (!isOnline) {
+      if (store.paymentMode === "credit") {
+        return "Credit sales need a live connection — switch payment mode or wait until back online.";
+      }
+      if (needsPrescription && !SELF_SIGNOFF_ROLES.has(role)) {
+        return "Prescription sign-off needs a live connection for pharmacist verification.";
+      }
+    }
     return null;
-  }, [store.lines, needsPrescription, store.doctorId, store.patientName, store.paymentMode, store.customerId, customers, branchId]);
+  }, [store.lines, needsPrescription, store.doctorId, store.patientName, store.paymentMode, store.customerId, customers, branchId, isOnline, role]);
 
   const focusSearch = useCallback(() => {
     searchInputRef.current?.focus();
@@ -155,6 +259,10 @@ export function PosScreen({
   function requestPinIfNeeded(pending: PendingDiscount, effectivePercent: number, apply: () => void) {
     if (role !== "counter_staff" || effectivePercent <= staffDiscountCapPercent || pinVerifiedRef.current) {
       apply();
+      return;
+    }
+    if (!isOnline) {
+      toast.error("This discount needs manager PIN approval, which requires a live connection.");
       return;
     }
     setPinDialog({ open: true, pending, error: null, forFinalSubmit: false });
@@ -251,7 +359,7 @@ export function PosScreen({
     if (!branchId) return;
     setSubmitting(true);
     try {
-      const result = await completeSale({
+      const payload = {
         branchId,
         customerId: store.customerId,
         doctorId: store.doctorId,
@@ -269,7 +377,41 @@ export function PosScreen({
           qty: l.qty,
           discountPercent: l.discountPercent,
         })),
-      });
+      };
+
+      if (!isOnline) {
+        const localId = newOfflineClientId();
+        const offlineInvoiceNo = `OFFLINE-${new Date().toISOString().slice(0, 10)}-${localId.slice(-6)}`;
+        await queueSale({
+          tenantId,
+          localId,
+          payload: { ...payload, offlineClientId: localId },
+          itemCount: store.lines.length,
+          total: billing.total,
+        });
+        await refreshPendingSales();
+
+        const receiptData = buildOfflineReceiptData({
+          localId,
+          invoiceNo: offlineInvoiceNo,
+          lines: store.lines,
+          catalogByItemId,
+          billing,
+          paymentMode: store.paymentMode,
+          customer: selectedCustomer,
+          doctor: doctorList.find((d) => d.id === store.doctorId) ?? null,
+          patientName: store.patientName,
+          patientAge: store.patientAge,
+          header: receiptHeader,
+        });
+
+        toast.success("Saved offline — will sync when back online");
+        store.reset();
+        setOfflineReceipt(receiptData);
+        return;
+      }
+
+      const result = await completeSale(payload);
       toast.success(`Sale completed — ${result.invoiceNo}`);
       store.reset();
       pinVerifiedRef.current = false;
@@ -324,8 +466,24 @@ export function PosScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blockedReason, submitting, store]);
 
+  if (offlineReceipt) {
+    return (
+      <OfflineReceiptOverlay
+        data={offlineReceipt}
+        onNewSale={() => setOfflineReceipt(null)}
+      />
+    );
+  }
+
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col">
+      <OfflineBanner
+        isOnline={isOnline}
+        syncing={syncing}
+        pendingSales={pendingSales}
+        onRetrySync={() => void handleSync()}
+        onDiscard={(localId) => void handleDiscardQueued(localId)}
+      />
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
         <SearchPanel items={items} onSelect={handleAddItem} inputRef={searchInputRef} />
 
