@@ -15,7 +15,7 @@ export async function getDashboardData() {
 
   const branchFilter = await getBranchFilter(tenantId, session.user.role);
 
-  const [salesToday, tenant, backupStatus, alerts, supplierOutstanding] = await Promise.all([
+  const [salesToday, tenant, backupStatus, alerts, supplierOutstanding, itemCount, invoiceCount] = await Promise.all([
     prisma.salesInvoice.aggregate({
       where: { tenantId, status: "completed", invoiceDate: { gte: startOfDay }, ...branchFilter },
       _sum: { total: true },
@@ -25,6 +25,8 @@ export async function getDashboardData() {
     getBackupStatus(),
     getAlerts(),
     prisma.supplierLedgerEntry.aggregate({ where: { tenantId }, _sum: { amount: true } }),
+    prisma.item.count({ where: { tenantId } }),
+    prisma.salesInvoice.count({ where: { tenantId } }),
   ]);
 
   return {
@@ -37,5 +39,6 @@ export async function getDashboardData() {
     pharmacyName: tenant.pharmacyName,
     licenseExpiryCount: alerts.licenseExpiry.length,
     licenseExpirySoonest: alerts.licenseExpiry[0] ?? null,
+    onboarding: { hasItems: itemCount > 0, hasSale: invoiceCount > 0 },
   };
 }

@@ -3,11 +3,13 @@ import { formatDistanceToNow } from "date-fns";
 import { getDashboardData } from "@/lib/actions/dashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, Clock, IndianRupee, PackageX, Receipt } from "lucide-react";
 
 export default async function DashboardPage() {
   const data = await getDashboardData();
+  const showOnboarding = !data.onboarding.hasItems || !data.onboarding.hasSale;
 
   return (
     <div className="space-y-4 p-6">
@@ -15,6 +17,10 @@ export default async function DashboardPage() {
         <h1 className="text-lg font-semibold">{data.pharmacyName}</h1>
         <p className="text-sm text-muted-foreground">Today at a glance</p>
       </div>
+
+      {showOnboarding && (
+        <OnboardingChecklist hasItems={data.onboarding.hasItems} hasSale={data.onboarding.hasSale} />
+      )}
 
       {data.backupStatus.isStale && (
         <Alert variant="destructive">

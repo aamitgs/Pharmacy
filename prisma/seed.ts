@@ -167,6 +167,27 @@ async function main() {
     },
   });
 
+  const plans = [
+    { code: "trial", name: "Free Trial", priceMonthly: 0, maxBranches: 1, maxUsers: 3, whiteLabel: false, publicApiAccess: false, contactSalesOnly: false, sortOrder: 0 },
+    { code: "growth", name: "Growth", priceMonthly: 999, maxBranches: 3, maxUsers: 10, whiteLabel: false, publicApiAccess: false, contactSalesOnly: false, sortOrder: 1 },
+    { code: "premium", name: "Premium", priceMonthly: 2999, maxBranches: null, maxUsers: null, whiteLabel: true, publicApiAccess: true, contactSalesOnly: false, sortOrder: 2 },
+    { code: "enterprise", name: "Enterprise", priceMonthly: 0, maxBranches: null, maxUsers: null, whiteLabel: true, publicApiAccess: true, contactSalesOnly: true, sortOrder: 3 },
+  ];
+  for (const p of plans) {
+    await prisma.subscriptionPlan.upsert({ where: { code: p.code }, update: {}, create: p });
+  }
+  const premiumPlan = await prisma.subscriptionPlan.findUniqueOrThrow({ where: { code: "premium" } });
+  await prisma.tenantSubscription.upsert({
+    where: { tenantId: tenant.id },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      planId: premiumPlan.id,
+      status: "active",
+      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    },
+  });
+
   console.log("Seeded tenant:", tenant.pharmacyName, "branch:", branch.name);
   console.log("Login with owner@demo-pharmacy.local / Owner@12345");
   console.log("Manager PIN for discount overrides: 1234");

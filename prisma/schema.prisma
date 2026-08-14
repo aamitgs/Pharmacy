@@ -58,7 +58,70 @@ model Tenant {
   customerLedgerEntries CustomerLedgerEntry[]
   whatsappLogs          WhatsAppLog[]
 
+  subscription TenantSubscription?
+
   @@map("tenants")
+}
+
+// ---------------------------------------------------------------------------
+// Subscription & billing — Phase 6
+// ---------------------------------------------------------------------------
+
+// A shared catalog, not tenant data — deliberately has no tenantId and no
+// RLS policy (every tenant needs to read the same plan list to self-serve
+// signup/upgrade). Only trusted internal code (via the bypass flag) writes
+// to it; there's no tenant-facing mutation path.
+model SubscriptionPlan {
+  id               String   @id @default(cuid())
+  code             String   @unique
+  name             String
+  priceMonthly     Decimal  @db.Decimal(10, 2)
+  maxBranches      Int?
+  maxUsers         Int?
+  whiteLabel       Boolean  @default(false)
+  publicApiAccess  Boolean  @default(false)
+  // Enterprise-tier plans skip self-serve Razorpay checkout entirely — the
+  // signup/upgrade UI shows a "Talk to sales" CTA instead of a pay button.
+  contactSalesOnly Boolean  @default(false)
+  // Razorpay's own recurring-billing plan id, created once in the Razorpay
+  // dashboard/API per priced tier. Null for the trial tier (no billing) and
+  // for the enterprise tier (billed manually, outside Razorpay).
+  razorpayPlanId   String?
+  sortOrder        Int      @default(0)
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  subscriptions TenantSubscription[]
+
+  @@map("subscription_plans")
+}
+
+enum TenantSubscriptionStatus {
+  trialing
+  active
+  past_due
+  cancelled
+}
+
+model TenantSubscription {
+  id                     String                    @id @default(cuid())
+  tenantId               String                    @unique
+  planId                 String
+  status                 TenantSubscriptionStatus  @default(trialing)
+  razorpayCustomerId     String?
+  razorpaySubscriptionId String?                    @unique
+  trialEndsAt            DateTime?
+  currentPeriodEnd       DateTime?
+  cancelledAt            DateTime?
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan   SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  @@index([tenantId])
+  @@index([planId])
+  @@map("tenant_subscriptions")
 }
 
 model Branch {

@@ -1,14 +1,16 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { canEditItemMaster, canManageCompliance } from "@/lib/rbac";
+import { canEditItemMaster, canManageCompliance, canManageUsers } from "@/lib/rbac";
 import { getBackupStatus } from "@/lib/actions/backup";
 import { getLicenseExpiryWindow } from "@/lib/actions/branch-settings";
+import { getBillingInfo } from "@/lib/actions/subscription";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BackupPanel } from "@/components/settings/backup-panel";
 import { SecurityPanel } from "@/components/settings/security-panel";
 import { ImportPanel } from "@/components/settings/import-panel";
 import { ExportPanel } from "@/components/settings/export-panel";
 import { CompliancePanel } from "@/components/settings/compliance-panel";
+import { BillingPanel } from "@/components/settings/billing-panel";
 import { Separator } from "@/components/ui/separator";
 
 export default async function SettingsPage() {
@@ -17,11 +19,13 @@ export default async function SettingsPage() {
 
   const canImport = canEditItemMaster(session.user.role);
   const canCompliance = canManageCompliance(session.user.role);
+  const canBilling = canManageUsers(session.user.role);
 
-  const [backupStatus, user, licenseWindow] = await Promise.all([
+  const [backupStatus, user, licenseWindow, billing] = await Promise.all([
     getBackupStatus(),
     prisma.user.findUniqueOrThrow({ where: { id: session.user.id } }),
     canCompliance ? getLicenseExpiryWindow() : Promise.resolve(null),
+    canBilling ? getBillingInfo() : Promise.resolve(null),
   ]);
 
   return (
@@ -33,6 +37,7 @@ export default async function SettingsPage() {
           <TabsTrigger value="data">Import / Export</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
           {canCompliance && <TabsTrigger value="compliance">Compliance</TabsTrigger>}
+          {canBilling && <TabsTrigger value="billing">Billing</TabsTrigger>}
         </TabsList>
         <TabsContent value="backup" className="pt-4">
           <BackupPanel
@@ -56,6 +61,11 @@ export default async function SettingsPage() {
         {canCompliance && licenseWindow && (
           <TabsContent value="compliance" className="pt-4">
             <CompliancePanel initial={licenseWindow} />
+          </TabsContent>
+        )}
+        {canBilling && billing && (
+          <TabsContent value="billing" className="pt-4">
+            <BillingPanel initial={billing} />
           </TabsContent>
         )}
       </Tabs>

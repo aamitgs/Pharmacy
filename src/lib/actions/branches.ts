@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole, requireSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
+import { checkPlanLimit } from "@/lib/plan-limits";
 import type { LicenseType } from "@/lib/license-types";
 
 export async function listBranches() {
@@ -44,6 +45,7 @@ export type BranchFieldsInput = z.infer<typeof branchFieldsSchema>;
 /** Opening a second (or third...) branch is an ownership decision, not day-to-day compliance upkeep. */
 export async function createBranch(input: BranchFieldsInput) {
   const session = await requireRole(["owner"]);
+  await checkPlanLimit(session.user.tenantId, "maxBranches");
   const parsed = branchFieldsSchema.parse(input);
   const cleanExpiryDates = parsed.licenseExpiryDates
     ? Object.fromEntries(Object.entries(parsed.licenseExpiryDates).filter(([, v]) => v))

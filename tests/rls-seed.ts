@@ -244,6 +244,17 @@ export async function seedTenantSlice(suffix: string) {
       data: { id: `bl-${suffix}`, tenantId: tenant.id, destination: "local", status: "success" },
     });
 
+    // subscription_plans is a shared, un-RLS'd catalog (no tenantId) — reuse
+    // one fixed row across test runs rather than creating a new one per slice.
+    const plan = await tx.subscriptionPlan.upsert({
+      where: { code: "rls-test-plan" },
+      update: {},
+      create: { code: "rls-test-plan", name: "RLS Test Plan", priceMonthly: 0, active: false },
+    });
+    const tenantSubscription = await tx.tenantSubscription.create({
+      data: { id: `sub-${suffix}`, tenantId: tenant.id, planId: plan.id, status: "trialing" },
+    });
+
     return {
       tenantId: tenant.id,
       branchId: branch.id,
@@ -274,6 +285,7 @@ export async function seedTenantSlice(suffix: string) {
       narcoticRegisterEntryId: narcoticRegisterEntry.id,
       auditLogId: auditLog.id,
       backupLogId: backupLog.id,
+      tenantSubscriptionId: tenantSubscription.id,
     };
   });
 }

@@ -81,7 +81,12 @@ export function LoginForm() {
       <Card className="w-full max-w-sm">
         <CardHeader className="space-y-1">
           <CardTitle className="text-xl">Pharmacy Billing</CardTitle>
-          <CardDescription>Sign in to continue to the counter</CardDescription>
+          <CardDescription>
+            Sign in to continue to the counter ·{" "}
+            <a href="/signup" className="underline underline-offset-2">
+              Start a free trial
+            </a>
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">
