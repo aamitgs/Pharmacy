@@ -17,6 +17,26 @@ function matches(item: PosItem, q: string) {
   );
 }
 
+function totalQty(item: PosItem) {
+  return item.batches.reduce((s, b) => s + b.currentQty, 0);
+}
+
+/** Same composition/generic-name match, nothing fancier — the spec is
+ * explicit this is a simple lookup against Item master, not a model. Only
+ * ever suggests items that actually have stock right now. */
+function findSubstitutes(item: PosItem, allItems: PosItem[]): PosItem[] {
+  const composition = item.composition?.trim().toLowerCase() || null;
+  const generic = item.genericName?.trim().toLowerCase() || null;
+  if (!composition && !generic) return [];
+  return allItems.filter((candidate) => {
+    if (candidate.id === item.id) return false;
+    if (totalQty(candidate) === 0) return false;
+    const candidateComposition = candidate.composition?.trim().toLowerCase() || null;
+    const candidateGeneric = candidate.genericName?.trim().toLowerCase() || null;
+    return (composition && candidateComposition === composition) || (generic && candidateGeneric === generic);
+  });
+}
+
 export function SearchPanel({
   items,
   onSelect,
@@ -36,6 +56,11 @@ export function SearchPanel({
     return items
       .filter((item) => matches(item, q))
       .sort((a, b) => {
+        // In-stock results first — an out-of-stock match is still shown
+        // (with substitutes), but shouldn't push purchasable items down.
+        const aInStock = totalQty(a) > 0 ? 0 : 1;
+        const bInStock = totalQty(b) > 0 ? 0 : 1;
+        if (aInStock !== bInStock) return aInStock - bInStock;
         const aStarts = a.name.toLowerCase().startsWith(q.toLowerCase()) ? 0 : 1;
         const bStarts = b.name.toLowerCase().startsWith(q.toLowerCase()) ? 0 : 1;
         return aStarts - bStarts || a.name.localeCompare(b.name);
@@ -91,8 +116,55 @@ export function SearchPanel({
           className="absolute z-40 mt-1 w-full overflow-hidden rounded-lg border bg-popover shadow-md"
         >
           {results.map((item, i) => {
-            const totalQty = item.batches.reduce((s, b) => s + b.currentQty, 0);
+            const qty = totalQty(item);
             const fefo = item.batches[0];
+            const outOfStock = qty === 0;
+            const substitutes = outOfStock ? findSubstitutes(item, items) : [];
+
+            if (outOfStock) {
+              return (
+                <div
+                  key={item.id}
+                  className={cn("px-3 py-2 text-sm", i === highlighted ? "bg-accent/40" : "")}
+                  onMouseEnter={() => setHighlighted(i)}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate font-medium text-muted-foreground">{item.name}</span>
+                        {item.scheduleClass !== "none" && (
+                          <Badge variant="outline" className="shrink-0 text-[10px]">
+                            {item.scheduleClass}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {item.genericName || item.manufacturer || "—"}
+                      </div>
+                    </div>
+                    <Badge className="shrink-0 gap-1 bg-destructive/10 text-destructive hover:bg-destructive/10">
+                      Out of stock
+                    </Badge>
+                  </div>
+                  {substitutes.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <span className="text-xs text-muted-foreground">Try instead:</span>
+                      {substitutes.map((sub) => (
+                        <button
+                          key={sub.id}
+                          type="button"
+                          onClick={() => selectItem(sub)}
+                          className="rounded-full border bg-background px-2 py-0.5 text-xs hover:bg-accent"
+                        >
+                          {sub.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
             return (
               <button
                 type="button"
@@ -120,7 +192,7 @@ export function SearchPanel({
                 </div>
                 <div className="shrink-0 text-right">
                   <div className="font-medium tabular-nums">₹{fefo?.saleRate.toFixed(2)}</div>
-                  <div className="text-xs text-muted-foreground">{totalQty} in stock</div>
+                  <div className="text-xs text-muted-foreground">{qty} in stock</div>
                 </div>
               </button>
             );

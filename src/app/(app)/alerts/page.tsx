@@ -5,12 +5,21 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { format } from "date-fns";
-import { FilePlus2, TriangleAlert } from "lucide-react";
+import { FilePlus2, Sparkles, TriangleAlert } from "lucide-react";
 
 export default async function AlertsPage() {
   const session = await auth();
-  const { lowStock, nearExpiry, nearExpiryWindowDays, licenseExpiry, licenseExpiryWindowDays } =
-    await getAlerts();
+  const {
+    lowStock,
+    reorderSuggestions,
+    reorderDaysThreshold,
+    velocityWindowDays,
+    slowMoverThresholdQty,
+    nearExpiry,
+    nearExpiryWindowDays,
+    licenseExpiry,
+    licenseExpiryWindowDays,
+  } = await getAlerts();
   const canEdit = session?.user.role === "owner" || session?.user.role === "pharmacist";
 
   return (
@@ -163,6 +172,81 @@ export default async function AlertsPage() {
       </div>
 
       <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <h2 className="flex items-center gap-1.5 text-sm font-medium">
+            <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
+            Reorder suggestions{" "}
+            <span className="text-muted-foreground">
+              ({reorderSuggestions.length}) — projected to run out within {reorderDaysThreshold} days
+            </span>
+          </h2>
+        </div>
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Item</TableHead>
+                <TableHead className="text-right">Current qty</TableHead>
+                <TableHead>Reasoning</TableHead>
+                <TableHead>Last purchase</TableHead>
+                {canEdit && <TableHead className="w-32" />}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {reorderSuggestions.length ? (
+                reorderSuggestions.map((row) => (
+                  <TableRow key={row.itemId}>
+                    <TableCell>
+                      <Link href={`/items/${row.itemId}`} className="font-medium hover:underline">
+                        {row.itemName}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {row.currentQty} {row.unit}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      Selling ~{row.unitsPerWeek}/week over the last {velocityWindowDays} days —{" "}
+                      <span className={row.daysOfStockRemaining <= 3 ? "font-medium text-destructive" : ""}>
+                        {row.daysOfStockRemaining <= 0 ? "already out of stock" : `${row.daysOfStockRemaining} days of stock left`}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {row.lastPurchase ? (
+                        <>
+                          ₹{row.lastPurchase.rate.toFixed(2)} from {row.lastPurchase.supplierName}
+                        </>
+                      ) : (
+                        "No purchase history"
+                      )}
+                    </TableCell>
+                    {canEdit && (
+                      <TableCell>
+                        <Button asChild size="sm" variant="outline">
+                          <Link
+                            href={`/grn/new?itemId=${row.itemId}${
+                              row.lastPurchase ? `&supplierId=${row.lastPurchase.supplierId}` : ""
+                            }`}
+                          >
+                            <FilePlus2 /> Create GRN
+                          </Link>
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={canEdit ? 5 : 4} className="h-20 text-center text-muted-foreground">
+                    Nothing is projected to run out soon at current sales pace.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
+      <div className="space-y-3">
         <h2 className="text-sm font-medium">
           Near expiry{" "}
           <span className="text-muted-foreground">
@@ -195,15 +279,25 @@ export default async function AlertsPage() {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{row.currentQty}</TableCell>
                     <TableCell>
-                      {row.isExpired ? (
-                        <Badge className="gap-1 bg-destructive/10 text-destructive hover:bg-destructive/10">
-                          <TriangleAlert className="h-3 w-3" /> Expired
-                        </Badge>
-                      ) : (
-                        <Badge className="gap-1 bg-warning/20 text-warning-foreground hover:bg-warning/20">
-                          <TriangleAlert className="h-3 w-3" /> Near expiry
-                        </Badge>
-                      )}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {row.isExpired ? (
+                          <Badge className="gap-1 bg-destructive/10 text-destructive hover:bg-destructive/10">
+                            <TriangleAlert className="h-3 w-3" /> Expired
+                          </Badge>
+                        ) : (
+                          <Badge className="gap-1 bg-warning/20 text-warning-foreground hover:bg-warning/20">
+                            <TriangleAlert className="h-3 w-3" /> Near expiry
+                          </Badge>
+                        )}
+                        {row.isSlowMover && !row.isExpired && (
+                          <Badge
+                            className="gap-1 bg-destructive text-destructive-foreground hover:bg-destructive"
+                            title={`Fewer than ${slowMoverThresholdQty} sold in the last ${velocityWindowDays} days — unlikely to sell through before it expires`}
+                          >
+                            <TriangleAlert className="h-3 w-3" /> High risk — slow mover
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

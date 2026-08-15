@@ -33,8 +33,14 @@ export async function getPosData() {
   const branchId = await resolveConcreteBranch(tenantId, session.user.role);
 
   const [items, customers, doctors, tenant, schemes, branch, showPoweredBy] = await Promise.all([
+    // Deliberately not filtered to in-stock items only (Phase 8): an
+    // out-of-stock item still needs to be findable by search so the POS
+    // screen can offer same-composition substitutes inline instead of the
+    // search just coming up empty. Its own `batches` array is simply empty
+    // in that case — see handleAddItem's existing guard against that, and
+    // SearchPanel's substitute lookup.
     prisma.item.findMany({
-      where: { tenantId, batches: { some: { branchId: branchId ?? undefined, currentQty: { gt: 0 } } } },
+      where: { tenantId },
       include: {
         batches: {
           where: { branchId: branchId ?? undefined, currentQty: { gt: 0 } },

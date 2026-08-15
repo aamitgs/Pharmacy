@@ -600,6 +600,47 @@ and the connection cleanly removable via Disconnect. The one thing that
 couldn't be exercised is a successful upload, which needs a real access
 token.
 
+### AI-assisted reorder, expiry-risk & substitute suggestions
+
+Deliberately a simple, explainable statistical rule
+(`src/lib/actions/alerts.ts`), not a model — every number the UI shows is
+exactly what drove the suggestion, per this phase's own design direction
+("owners need to trust and understand a suggestion, not just receive
+one").
+
+- **Reorder suggestions**: a new section on the existing Alerts screen
+  (not a separate screen), ranked by urgency. Sales velocity is a trailing
+  30-day moving average (`VELOCITY_WINDOW_DAYS`); an item surfaces when
+  its current stock would run out within 14 days
+  (`REORDER_DAYS_THRESHOLD`) at that pace — shown as "Selling ~X/week
+  over the last 30 days — Y days of stock left", linking straight to
+  Create GRN pre-filled, the same pattern the existing Low Stock section
+  already uses. Items with zero recent sales are deliberately excluded —
+  there's nothing to extrapolate from, and suggesting a reorder with no
+  real reasoning behind it would violate the whole point of this being
+  explainable.
+- **Expiry-risk**: a refinement of the existing Near Expiry alert, not a
+  new category — batches that are both near-expiry *and* slow-moving
+  (fewer than 5 units sold in the last 30 days, the same concept as
+  Reports > Movers' `isSlowMover`, just a fixed default rather than that
+  report's configurable threshold) get an extra "High risk — slow mover"
+  badge and sort to the top of the list, since that specific combination
+  is what actually causes write-off loss.
+- **Substitute suggestions**: `getPosData` now returns every tenant item,
+  not just ones currently in stock at the branch (previously filtered
+  out entirely) — an out-of-stock item's search result shows an "Out of
+  stock" badge plus up to a handful of in-stock items sharing the same
+  `composition` or `genericName` field as inline clickable pills
+  (`src/components/pos/search-panel.tsx`), added to the cart directly on
+  click. A plain field-equality lookup against Item master, exactly as
+  scoped — no model involved.
+
+Verified live against a real running instance: real POS sales built real
+sales-velocity data driving a real reorder suggestion (with the exact
+"days of stock left" math checked), a seeded near-expiry+zero-sales batch
+correctly flagged high-risk, and searching a real zero-stock item in POS
+surfaced its real in-stock substitute, clickable straight into the cart.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,

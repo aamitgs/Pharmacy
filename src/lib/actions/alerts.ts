@@ -19,6 +19,18 @@ const LICENSE_NUMBER_FIELD: Record<LicenseType, "drugLicenseRetailNo" | "drugLic
   fssai: "fssaiNo",
 };
 
+// Reorder suggestions & expiry-risk flagging (Phase 8) — deliberately a
+// simple, explainable statistical rule (moving-average sales velocity),
+// not a model. Every number the UI shows ("sold X/week, Y days left") is
+// exactly what drove the suggestion, nothing hidden.
+const VELOCITY_WINDOW_DAYS = 30;
+const REORDER_DAYS_THRESHOLD = 14;
+// "Slow-moving" for the expiry-risk refinement, same concept as the
+// Reports > Movers screen's isSlowMover, just a fixed default here rather
+// than the report's user-configurable threshold — Alerts is the fast,
+// no-configuration view.
+const SLOW_MOVER_THRESHOLD_QTY = 5;
+
 export async function getAlerts() {
   const session = await requireSession();
   const tenantId = session.user.tenantId;
@@ -41,15 +53,58 @@ export async function getAlerts() {
 
   const now = new Date();
   const nearExpiryCutoff = new Date(now.getTime() + tenant.nearExpiryWindowDays * 86400000);
+  const velocityWindowStart = new Date(now.getTime() - VELOCITY_WINDOW_DAYS * 86400000);
 
   const lowStockEntries = items
     .map((item) => ({ item, totalQty: item.batches.reduce((sum, b) => sum + b.currentQty, 0) }))
     .filter(({ item, totalQty }) => totalQty < item.reorderLevel);
 
-  const lowStockItemIds = lowStockEntries.map(({ item }) => item.id);
-  const recentGrnItems = lowStockItemIds.length
+  // Sales velocity over the trailing window, per item — the one number
+  // every reorder suggestion and expiry-risk flag below is derived from,
+  // so the UI can always show its actual reasoning.
+  const salesByItem = await prisma.salesInvoiceItem.groupBy({
+    by: ["itemId"],
+    where: {
+      invoice: { tenantId, ...branchFilter, status: "completed", invoiceDate: { gte: velocityWindowStart, lte: now } },
+    },
+    _sum: { qty: true },
+  });
+  const soldInWindowByItem = new Map(salesByItem.map((s) => [s.itemId, s._sum.qty ?? 0]));
+
+  const reorderSuggestions: {
+    itemId: string;
+    itemName: string;
+    unit: string;
+    currentQty: number;
+    unitsPerWeek: number;
+    daysOfStockRemaining: number;
+    lastPurchase: { rate: number; supplierId: string; supplierName: string } | null;
+  }[] = [];
+  for (const item of items) {
+    const totalQty = item.batches.reduce((sum, b) => sum + b.currentQty, 0);
+    const qtySold = soldInWindowByItem.get(item.id) ?? 0;
+    if (qtySold === 0) continue; // no recent sales — nothing to extrapolate, not a reorder suggestion
+    const unitsPerWeek = qtySold / (VELOCITY_WINDOW_DAYS / 7);
+    const daysOfStockRemaining = totalQty <= 0 ? 0 : totalQty / (unitsPerWeek / 7);
+    if (daysOfStockRemaining > REORDER_DAYS_THRESHOLD) continue;
+    reorderSuggestions.push({
+      itemId: item.id,
+      itemName: item.name,
+      unit: item.unit,
+      currentQty: totalQty,
+      unitsPerWeek: Math.round(unitsPerWeek * 10) / 10,
+      daysOfStockRemaining: Math.round(daysOfStockRemaining * 10) / 10,
+      lastPurchase: null, // filled in below, once lastPurchaseByItem is built
+    });
+  }
+  reorderSuggestions.sort((a, b) => a.daysOfStockRemaining - b.daysOfStockRemaining);
+
+  const lastPurchaseItemIds = [
+    ...new Set([...lowStockEntries.map(({ item }) => item.id), ...reorderSuggestions.map((r) => r.itemId)]),
+  ];
+  const recentGrnItems = lastPurchaseItemIds.length
     ? await prisma.grnItem.findMany({
-        where: { itemId: { in: lowStockItemIds }, grn: { tenantId, ...branchFilter } },
+        where: { itemId: { in: lastPurchaseItemIds }, grn: { tenantId, ...branchFilter } },
         orderBy: { grn: { receivedAt: "desc" } },
         include: { grn: { include: { supplier: true } } },
       })
@@ -78,6 +133,10 @@ export async function getAlerts() {
     lastPurchase: lastPurchaseByItem.get(item.id) ?? null,
   }));
 
+  for (const suggestion of reorderSuggestions) {
+    suggestion.lastPurchase = lastPurchaseByItem.get(suggestion.itemId) ?? null;
+  }
+
   const nearExpiry: {
     itemId: string;
     itemName: string;
@@ -86,8 +145,10 @@ export async function getAlerts() {
     expiryDate: Date;
     currentQty: number;
     isExpired: boolean;
+    isSlowMover: boolean;
   }[] = [];
   for (const item of items) {
+    const isSlowMover = (soldInWindowByItem.get(item.id) ?? 0) < SLOW_MOVER_THRESHOLD_QTY;
     for (const batch of item.batches) {
       if (batch.currentQty > 0 && batch.expiryDate <= nearExpiryCutoff) {
         nearExpiry.push({
@@ -98,11 +159,18 @@ export async function getAlerts() {
           expiryDate: batch.expiryDate,
           currentQty: batch.currentQty,
           isExpired: batch.expiryDate < now,
+          isSlowMover,
         });
       }
     }
   }
-  nearExpiry.sort((a, b) => a.expiryDate.getTime() - b.expiryDate.getTime());
+  // Expiry risk (slow-moving + near-expiry, the combination that causes
+  // real loss) sorts to the top within the existing list — a refinement of
+  // this same alert, not a separate one, per the design direction.
+  nearExpiry.sort((a, b) => {
+    if (a.isSlowMover !== b.isSlowMover) return a.isSlowMover ? -1 : 1;
+    return a.expiryDate.getTime() - b.expiryDate.getTime();
+  });
 
   const licenseExpiryCutoff = new Date(now.getTime() + tenant.licenseExpiryWindowDays * 86400000);
   const licenseExpiry: {
@@ -139,6 +207,10 @@ export async function getAlerts() {
 
   return {
     lowStock,
+    reorderSuggestions,
+    reorderDaysThreshold: REORDER_DAYS_THRESHOLD,
+    velocityWindowDays: VELOCITY_WINDOW_DAYS,
+    slowMoverThresholdQty: SLOW_MOVER_THRESHOLD_QTY,
     nearExpiry,
     nearExpiryWindowDays: tenant.nearExpiryWindowDays,
     licenseExpiry,
