@@ -28,6 +28,7 @@ import {
   Ticket,
   BedDouble,
   ClipboardPlus,
+  LineChart,
 } from "lucide-react";
 
 type NavItem = {
@@ -49,6 +50,7 @@ const RETAIL_ONLY_ROLES: UserRole[] = ["owner", "pharmacist", "counter_staff", "
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/analytics", label: "Analytics", icon: LineChart, roles: ["owner"] },
   { href: "/alerts", label: "Alerts", icon: TriangleAlert },
   { href: "/pos", label: "Billing", icon: ScanBarcode, roles: RETAIL_ONLY_ROLES },
   { href: "/items", label: "Items & Batches", icon: Package },

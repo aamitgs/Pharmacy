@@ -641,6 +641,46 @@ sales-velocity data driving a real reorder suggestion (with the exact
 correctly flagged high-risk, and searching a real zero-stock item in POS
 surfaced its real in-stock substitute, clickable straight into the cart.
 
+### Owner cross-branch analytics dashboard
+
+A new `/analytics` page (owner-only — nav item and page both gated), deliberately
+the one report in the app that does *not* apply the usual branch-scope
+filter (`src/lib/branch-scope.ts`): consolidating across every branch is
+the entire point, with branches broken out explicitly in the branch
+performance chart rather than narrowed to whichever one is selected in
+the header switcher elsewhere.
+
+- **Sales trend** and **margin trend**: two separate line charts (never
+  one dual-axis chart mixing ₹ and % scales) — server-side aggregated by
+  day from `SalesInvoiceItem`, same single round-trip query feeding all
+  four sections below for a full date range without regressing to
+  client-side computation.
+- **Branch performance**: one ranked bar chart, best performer tinted
+  green and lowest tinted red — "top/bottom" is the same sorted list read
+  from either end, not two separate charts. Revenue/cost/margin use the
+  exact same per-line definition (`qty*rate - discountAmount`, `qty *
+  batch.purchaseRate`) `src/lib/actions/margin-movers.ts` already
+  established, so this dashboard's numbers agree with the existing Margin
+  Report rather than introducing a second "revenue" definition.
+- **Staff performance**: reuses `getDiscountReport` (Phase 4) directly for
+  discount-given. Sales volume has no dedicated field anywhere —
+  `SalesInvoice` never recorded who rang it up (only who signed off a
+  prescription) — so it's attributed via the existing `sale.complete`
+  `AuditLog` entries instead of a schema change; the audit trail supplies
+  only the attribution (which user, which invoice), the rupee figures
+  still come from `SalesInvoice` itself, so this section's numbers agree
+  with the rest of the page too.
+
+Charts use `recharts` with the app's existing theme tokens
+(`var(--primary)`, `var(--success)`, `var(--destructive)`, `var(--border)`,
+etc.) rather than a hardcoded palette, so they follow light/dark mode
+automatically. Verified live against a real running instance: real sales
+rung up across two real branches, checked the dashboard's totals against
+the actual per-branch/per-staff numbers by hand, and confirmed every
+section (including staff revenue) agrees with the header total —
+deliberately checked for exactly the kind of same-page inconsistency a
+scrutinizing owner would notice.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,
