@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { basePrisma, prisma, tenantContext } from "@/lib/prisma";
 import { encryptBackup } from "@/lib/backup-crypto";
+import { uploadBackupToProvider } from "@/lib/cloud-backup/upload";
 
 // Intended to be hit by an OS-level cron / scheduler (see README), not by a
 // logged-in user — auth is a shared secret header rather than a session.
@@ -63,6 +64,24 @@ export async function POST(req: NextRequest) {
         prisma.backupLog.create({ data: { tenantId, destination: "local", status: "success" } })
       );
       results.push({ tenantId, ok: true });
+
+      // Cloud destinations, if connected — a failed cloud upload never
+      // fails the local backup that already succeeded above, and each
+      // provider is independent of the others.
+      const connections = await tenantContext.run({ tenantId }, () =>
+        prisma.cloudBackupConnection.findMany({ where: { tenantId } })
+      );
+      for (const conn of connections) {
+        const cloudFilename = `pharmacy-backup-${tenantId}-${new Date().toISOString().replace(/[:.]/g, "-")}.enc`;
+        const uploadResult = await tenantContext.run({ tenantId }, () =>
+          uploadBackupToProvider(tenantId, conn.provider, cloudFilename, encrypted)
+        );
+        await tenantContext.run({ tenantId }, () =>
+          prisma.backupLog.create({
+            data: { tenantId, destination: conn.provider, status: uploadResult.ok ? "success" : "failed" },
+          })
+        );
+      }
     } catch {
       await tenantContext.run({ tenantId }, () =>
         prisma.backupLog.create({ data: { tenantId, destination: "local", status: "failed" } })

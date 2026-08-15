@@ -556,6 +556,50 @@ integration work is explicitly not part of this phase).
 itself (this phase produces the consumption data an external HIS bills
 from, not an invoice), a full EMR, and direct Hospital OS integration work.
 
+## Phase 8: AI, analytics & ecosystem integrations (in progress)
+
+Built as a series of independent, user-confirmed checkpoints rather than
+one pass — see this phase's own spec for why (highest scope-creep risk in
+the plan). Sections below are added as each checkpoint lands.
+
+### Cloud backup (Google Drive & OneDrive)
+
+Extends the Phase 1 local/manual backup with per-tenant OAuth-connected
+cloud destinations, in Settings > Backup. Every upload is the exact same
+AES-256-GCM-encrypted file the local backup already produces
+(`src/lib/backup-crypto.ts`) — the cloud provider only ever stores
+ciphertext. `CloudBackupConnection` (RLS-protected) holds the OAuth
+tokens, themselves encrypted at rest with that same helper rather than a
+second scheme. The OAuth round trip uses a signed, stateless CSRF token
+(`src/lib/cloud-backup/oauth-state.ts`, same HMAC-over-JSON shape as
+`admin-auth.ts`'s session cookie, 10-minute TTL) instead of server-side
+state storage.
+
+`src/lib/cloud-backup/google-drive.ts` and `onedrive.ts` follow this app's
+established provider pattern (Razorpay in Phase 6): plain `fetch`,
+`isXConfigured()` checks, `{ ok, data?, note? }` results, "not configured"
+rather than a crash when env vars are unset. To go live: register OAuth
+apps with Google Cloud Console / Microsoft Entra, add
+`<NEXTAUTH_URL>/api/oauth/{google-drive,onedrive}/callback` as redirect
+URIs, and set `GOOGLE_DRIVE_CLIENT_ID`/`GOOGLE_DRIVE_CLIENT_SECRET` and/or
+`ONEDRIVE_CLIENT_ID`/`ONEDRIVE_CLIENT_SECRET`. The scheduled backup route
+(`/api/backup/scheduled`) uploads to every connected destination per
+tenant automatically; a failed cloud upload never fails the local backup
+that already succeeded, and every attempt (success or failure, any
+destination) logs to the same `BackupLog` the local backup always has.
+
+**Not tested against real Google/Microsoft OAuth credentials** — none
+were available in the environment this was built in, the same caveat
+Razorpay had in Phase 6. What *was* verified against the real, running
+app: the full Settings UI (connect/disconnect, configured-vs-not badges),
+and — with a connection seeded directly and a placeholder token — a
+"Backup now" click that made a genuine HTTP request to Google's live Drive
+API and correctly surfaced Google's own real authentication-failure
+response as a toast, with the attempt logged to `BackupLog` as `failed`
+and the connection cleanly removable via Disconnect. The one thing that
+couldn't be exercised is a successful upload, which needs a real access
+token.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,

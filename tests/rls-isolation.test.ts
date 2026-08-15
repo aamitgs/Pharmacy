@@ -72,6 +72,7 @@ const cases: Case[] = [
   { label: "NarcoticRegisterEntry", aId: () => A.narcoticRegisterEntryId, bId: () => B.narcoticRegisterEntryId, find: (id) => prisma.narcoticRegisterEntry.findUnique({ where: { id } }) },
   { label: "TenantSubscription", aId: () => A.tenantSubscriptionId, bId: () => B.tenantSubscriptionId, find: (id) => prisma.tenantSubscription.findUnique({ where: { id } }) },
   { label: "ApiKey", aId: () => A.apiKeyId, bId: () => B.apiKeyId, find: (id) => prisma.apiKey.findUnique({ where: { id } }) },
+  { label: "CloudBackupConnection", aId: () => A.cloudBackupConnectionId, bId: () => B.cloudBackupConnectionId, find: (id) => prisma.cloudBackupConnection.findUnique({ where: { id } }) },
   // Phase 7: Hospital Mode
   { label: "Ward", aId: () => A.wardId, bId: () => B.wardId, find: (id) => prisma.ward.findUnique({ where: { id } }) },
   { label: "WardAssignment", aId: () => A.wardAssignmentId, bId: () => B.wardAssignmentId, find: (id) => prisma.wardAssignment.findUnique({ where: { id } }) },

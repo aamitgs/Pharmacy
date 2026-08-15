@@ -1,7 +1,9 @@
+import { Suspense } from "react";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { canEditItemMaster, canManageCompliance, canManageUsers } from "@/lib/rbac";
 import { getBackupStatus } from "@/lib/actions/backup";
+import { getCloudBackupInfo } from "@/lib/actions/cloud-backup";
 import { getLicenseExpiryWindow } from "@/lib/actions/branch-settings";
 import { getBillingInfo } from "@/lib/actions/subscription";
 import { getBrandingInfo } from "@/lib/actions/branding";
@@ -30,12 +32,14 @@ export default async function SettingsPage() {
   const canCompliance = canManageCompliance(session.user.role);
   const canBilling = canManageUsers(session.user.role);
   const canManageStaff = canManageUsers(session.user.role);
+  const canBackup = session.user.role === "owner" || session.user.role === "pharmacist" || session.user.role === "ward_pharmacist";
 
   const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: session.user.tenantId } });
   const isHospital = tenant.tenantType === "hospital";
 
-  const [backupStatus, user, licenseWindow, billing, branding, apiAccess, wards, staff, branches] = await Promise.all([
+  const [backupStatus, cloudBackupInfo, user, licenseWindow, billing, branding, apiAccess, wards, staff, branches] = await Promise.all([
     getBackupStatus(),
+    canBackup ? getCloudBackupInfo() : Promise.resolve(null),
     prisma.user.findUniqueOrThrow({ where: { id: session.user.id } }),
     canCompliance ? getLicenseExpiryWindow() : Promise.resolve(null),
     canBilling ? getBillingInfo() : Promise.resolve(null),
@@ -62,11 +66,15 @@ export default async function SettingsPage() {
           {isHospital && wards && <TabsTrigger value="wards">Wards</TabsTrigger>}
         </TabsList>
         <TabsContent value="backup" className="pt-4">
-          <BackupPanel
-            lastBackupAt={backupStatus.lastBackupAt}
-            lastBackupStatus={backupStatus.lastBackupStatus}
-            isStale={backupStatus.isStale}
-          />
+          <Suspense fallback={null}>
+            <BackupPanel
+              lastBackupAt={backupStatus.lastBackupAt}
+              lastBackupStatus={backupStatus.lastBackupStatus}
+              isStale={backupStatus.isStale}
+              cloudBackupInfo={cloudBackupInfo}
+              canConnectCloud={session.user.role === "owner"}
+            />
+          </Suspense>
         </TabsContent>
         <TabsContent value="data" className="space-y-6 pt-4">
           {canImport && (

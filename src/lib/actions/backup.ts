@@ -4,7 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { requireRole, requireSession } from "@/lib/rbac";
 import { encryptBackup } from "@/lib/backup-crypto";
 
-async function gatherTenantData(tenantId: string) {
+// Exported so cloud-backup.ts (Phase 8) can reuse the exact same export
+// shape for Google Drive/OneDrive uploads instead of duplicating it.
+export async function gatherTenantData(tenantId: string) {
   const [tenant, branches, items, batches, customers, doctors, invoices] = await Promise.all([
     prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } }),
     prisma.branch.findMany({ where: { tenantId } }),

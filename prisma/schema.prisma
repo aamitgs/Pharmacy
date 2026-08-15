@@ -78,6 +78,8 @@ model Tenant {
   patientAdmissions PatientAdmission[]
   ipdDispenses      IpdDispense[]
 
+  cloudBackupConnections CloudBackupConnection[]
+
   @@map("tenants")
 }
 
@@ -657,6 +659,8 @@ model User {
   indentsApproved      Indent[]         @relation("IndentApprovedBy")
   ipdDispensesRecorded IpdDispense[]    @relation("IpdDispenseDispensedBy")
 
+  cloudBackupConnectionsMade CloudBackupConnection[]
+
   @@unique([tenantId, email])
   @@index([tenantId])
   @@map("users")
@@ -688,6 +692,8 @@ model AuditLog {
 enum BackupDestination {
   local
   manual
+  google_drive
+  onedrive
 }
 
 enum BackupStatus {
@@ -1213,4 +1219,37 @@ model IpdDispense {
   @@index([tenantId])
   @@index([admissionId])
   @@map("ipd_dispenses")
+}
+
+// ---------------------------------------------------------------------------
+// Cloud backup — Phase 8
+// ---------------------------------------------------------------------------
+
+enum CloudBackupProvider {
+  google_drive
+  onedrive
+}
+
+// One OAuth connection per tenant per provider. Tokens are encrypted at
+// rest with the same AES-256-GCM helper (src/lib/backup-crypto.ts) the
+// backup file contents themselves already use — not a second encryption
+// scheme. A scheduled/manual backup run uploads to every row here that
+// exists for the tenant; disconnecting is just deleting the row.
+model CloudBackupConnection {
+  id                String              @id @default(cuid())
+  tenantId          String
+  provider          CloudBackupProvider
+  accessTokenEnc    String
+  refreshTokenEnc   String
+  expiresAt         DateTime
+  connectedByUserId String
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connectedBy User   @relation(fields: [connectedByUserId], references: [id])
+
+  @@unique([tenantId, provider])
+  @@index([tenantId])
+  @@map("cloud_backup_connections")
 }

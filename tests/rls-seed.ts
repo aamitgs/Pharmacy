@@ -259,6 +259,19 @@ export async function seedTenantSlice(suffix: string) {
       data: { id: `apikey-${suffix}`, tenantId: tenant.id, name: "Test key", keyHash: `hash-${suffix}`, keyPrefix: "phk_test" },
     });
 
+    // Phase 8: cloud backup connection fixture.
+    const cloudBackupConnection = await tx.cloudBackupConnection.create({
+      data: {
+        id: `cloudbackup-${suffix}`,
+        tenantId: tenant.id,
+        provider: "google_drive",
+        accessTokenEnc: "enc-access",
+        refreshTokenEnc: "enc-refresh",
+        expiresAt: new Date(Date.now() + 3600_000),
+        connectedByUserId: owner.id,
+      },
+    });
+
     // Phase 7: Hospital Mode fixtures — one full vertical slice, same as
     // everything above.
     const ward = await tx.ward.create({
@@ -344,6 +357,7 @@ export async function seedTenantSlice(suffix: string) {
       backupLogId: backupLog.id,
       tenantSubscriptionId: tenantSubscription.id,
       apiKeyId: apiKey.id,
+      cloudBackupConnectionId: cloudBackupConnection.id,
       wardId: ward.id,
       wardBatchId: wardBatch.id,
       wardAssignmentId: wardAssignment.id,
