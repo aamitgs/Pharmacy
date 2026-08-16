@@ -749,6 +749,50 @@ customer detail page renders both the opt-in toggle and the reminder
 history. Also confirmed the scheduled route rejects a bad shared secret
 (401) and accepts the real one.
 
+### GRN manufacturer/distributor scheme tracking
+
+Extends `GrnItem` with three fields for the trade schemes distributors
+routinely offer ("10+2", a cash discount %, or both) rather than adding a
+parallel scheme model — "distributor" is already `Supplier` and
+"manufacturer" is already `Item.manufacturer`, so no new master data was
+needed for either grouping.
+
+- **`freeQty`**: bonus units received at zero extra cost. This is real
+  stock, not just a note — `createGrn` folds it into the batch's received
+  qty and blends the per-unit cost across paid + free units
+  (`effectiveRate = (qty * rate) / (qty + freeQty)`), so every existing
+  consumer of `batch.purchaseRate` (margin report, analytics, movers)
+  automatically reflects the cheaper true cost without needing to know
+  schemes exist at all.
+- **`schemeDiscountPercent`** and **`schemeNote`**: deliberately
+  informational only. A cash-discount % doesn't retroactively rewrite the
+  supplier ledger amount, the GRN total, or the e-way bill threshold check
+  — those already have established call sites elsewhere that a
+  text-adjacent percent field shouldn't reach into unasked. It's surfaced
+  instead in a new **Scheme Benefits** report.
+- **GRN entry UX**: a "Scheme" toggle in the existing fast row-entry bar
+  reveals three extra inputs (Free qty / CD % / note) only when clicked —
+  collapsed by default, so the common no-scheme line keeps the exact same
+  Item→Batch→Mfg→Expiry→MRP→Rate→Qty→Enter flow this screen was built
+  around in Phase 2. The GRN detail page shows a scheme badge per line and
+  a "Scheme benefit received" total.
+- **Reports > Scheme Benefits** (`src/lib/actions/reports.ts`,
+  `getSchemeBenefitsReport`): every GRN line that recorded a scheme in the
+  date range, with roll-ups by distributor and by manufacturer plus a CSV
+  export — mirrors the existing Purchase Register's page/action/export
+  structure exactly. Benefit values (`freeQty * rate` for free goods,
+  `qty * rate * percent/100` for cash discount) are computed at read time
+  from the stored GRN fields rather than persisted, since they're a pure
+  function of data that's already there.
+
+Verified live against a real running instance: created a real item with a
+manufacturer and a real distributor, entered a real GRN line via the
+actual row-entry UI (10 paid + 2 free @ ₹50, 5% cash discount), confirmed
+the resulting batch landed at qty 12 with a blended purchase rate of
+₹41.67, confirmed the GRN detail page and the Scheme Benefits report
+(including its distributor/manufacturer roll-ups and CSV export) all show
+the correct ₹125 total benefit (₹100 free goods + ₹25 cash discount).
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,

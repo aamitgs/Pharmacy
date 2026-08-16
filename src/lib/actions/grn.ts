@@ -17,6 +17,12 @@ const grnItemSchema = z.object({
   mrp: z.coerce.number().positive("MRP must be greater than 0"),
   rate: z.coerce.number().min(0),
   qty: z.coerce.number().int().positive("Qty must be greater than 0"),
+  // Manufacturer/distributor scheme tracking (Phase 8). freeQty is real
+  // stock (folded into the batch below); schemeDiscountPercent/schemeNote
+  // are informational, surfaced in the Scheme Benefits report only.
+  freeQty: z.coerce.number().int().min(0).default(0),
+  schemeDiscountPercent: z.coerce.number().min(0).max(100).optional(),
+  schemeNote: z.string().trim().max(200).optional(),
 });
 
 const grnSchema = z.object({
@@ -28,6 +34,10 @@ const grnSchema = z.object({
 });
 
 export type GrnInput = z.infer<typeof grnSchema>;
+
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
 
 export async function listGrns() {
   const session = await requireRetailSession();
@@ -124,6 +134,14 @@ export async function createGrn(input: GrnInput) {
       const expiryDate = new Date(row.expiryDate);
       const mfgDate = row.mfgDate ? new Date(row.mfgDate) : null;
 
+      // Free-scheme units are real stock received at zero extra cost — fold
+      // them into the qty that lands on the batch, and blend the per-unit
+      // cost across paid + free units so margin/analytics (which only ever
+      // read batch.purchaseRate) automatically reflect the cheaper
+      // effective cost without needing to know schemes exist at all.
+      const receivedQty = row.qty + row.freeQty;
+      const effectiveRate = receivedQty > 0 ? round2((row.qty * row.rate) / receivedQty) : row.rate;
+
       // Scoped to this branch — the same batch number can exist as a
       // separate row at another branch (received there independently, or
       // arrived via a stock transfer), so matching must not cross branches.
@@ -135,9 +153,9 @@ export async function createGrn(input: GrnInput) {
         ? await tx.batch.update({
             where: { id: existingBatch.id },
             data: {
-              currentQty: { increment: row.qty },
+              currentQty: { increment: receivedQty },
               mrp: row.mrp,
-              purchaseRate: row.rate,
+              purchaseRate: effectiveRate,
               expiryDate,
               mfgDate,
             },
@@ -150,12 +168,12 @@ export async function createGrn(input: GrnInput) {
               mfgDate,
               expiryDate,
               mrp: row.mrp,
-              purchaseRate: row.rate,
+              purchaseRate: effectiveRate,
               // GRN entry doesn't capture a separate selling price (out of
               // scope this phase) — default to MRP; the pharmacist can
               // adjust it afterward from the item's batch edit screen.
               saleRate: row.mrp,
-              currentQty: row.qty,
+              currentQty: receivedQty,
             },
           });
 
@@ -170,6 +188,9 @@ export async function createGrn(input: GrnInput) {
           mrp: row.mrp,
           rate: row.rate,
           qty: row.qty,
+          freeQty: row.freeQty,
+          schemeDiscountPercent: row.schemeDiscountPercent,
+          schemeNote: row.schemeNote || null,
         },
       });
     }

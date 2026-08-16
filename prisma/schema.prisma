@@ -860,18 +860,39 @@ model Grn {
 }
 
 model GrnItem {
-  id         String    @id @default(cuid())
-  grnId      String
-  itemId     String
+  id                    String    @id @default(cuid())
+  grnId                 String
+  itemId                String
   // Set in the same transaction that creates/updates the Batch this row
   // resulted in — a GrnItem never exists without its Batch being real.
-  batchId    String
-  batchNo    String
-  mfgDate    DateTime?
-  expiryDate DateTime
-  mrp        Decimal   @db.Decimal(10, 2)
-  rate       Decimal   @db.Decimal(10, 2)
-  qty        Int
+  batchId               String
+  batchNo               String
+  mfgDate               DateTime?
+  expiryDate            DateTime
+  mrp                   Decimal   @db.Decimal(10, 2)
+  // The invoiced/list rate per unit for the qty actually billed — unchanged
+  // meaning even when a scheme applies, so this always matches what the
+  // supplier's paper invoice says. Scheme benefit is layered on top via the
+  // fields below rather than baked into this number.
+  rate                  Decimal   @db.Decimal(10, 2)
+  qty                   Int
+  // Phase 8: manufacturer/distributor scheme tracking. Bonus units received
+  // at zero additional cost (e.g. a "10+1" scheme) — real stock, so
+  // createGrn folds these into the batch's received qty and blends them
+  // into its purchaseRate; unlike schemeDiscountPercent below this isn't
+  // just informational.
+  freeQty               Int       @default(0)
+  // A cash/trade discount % negotiated on this line's invoiced value.
+  // Deliberately informational only (surfaced in the Scheme Benefits
+  // report) rather than silently rewriting the supplier ledger amount or
+  // the batch's cost — those already have well-established call sites
+  // elsewhere (createGrn's ledger entry, the e-way bill threshold check)
+  // that a text-adjacent percent field shouldn't reach into un-asked.
+  schemeDiscountPercent Decimal?  @db.Decimal(5, 2)
+  // Free-text description of the scheme itself (e.g. "Diwali 10+1", a
+  // distributor's scheme code) — purely for the pharmacist's own record and
+  // the Scheme Benefits report, never parsed.
+  schemeNote            String?
 
   grn   Grn   @relation(fields: [grnId], references: [id], onDelete: Cascade)
   item  Item  @relation(fields: [itemId], references: [id])

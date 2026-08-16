@@ -125,6 +125,12 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["owner", "pharmacist"],
   },
   {
+    href: "/reports/scheme-benefits",
+    label: "Scheme Benefits",
+    icon: FileSpreadsheet,
+    roles: ["owner", "pharmacist"],
+  },
+  {
     href: "/reports/narcotic-register",
     label: "Narcotic Register",
     icon: ShieldAlert,

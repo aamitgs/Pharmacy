@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { GrnEwayBillActions } from "@/components/einvoice/grn-ewaybill-actions";
-import { ChevronLeft, Printer } from "lucide-react";
+import { ChevronLeft, Printer, Gift } from "lucide-react";
 
 export type GrnDetail = {
   id: string;
@@ -27,11 +28,18 @@ export type GrnDetail = {
     mrp: number;
     rate: number;
     qty: number;
+    freeQty: number;
+    schemeDiscountPercent: number | null;
+    schemeNote: string | null;
   }[];
 };
 
 export function GrnDetailClient({ grn, canEdit }: { grn: GrnDetail; canEdit: boolean }) {
   const total = grn.items.reduce((sum, i) => sum + i.qty * i.rate, 0);
+  const schemeBenefit = grn.items.reduce(
+    (sum, i) => sum + i.freeQty * i.rate + i.qty * i.rate * ((i.schemeDiscountPercent ?? 0) / 100),
+    0
+  );
 
   return (
     <div className="p-6">
@@ -101,6 +109,7 @@ export function GrnDetailClient({ grn, canEdit }: { grn: GrnDetail; canEdit: boo
               <TableHead className="text-right">Rate</TableHead>
               <TableHead className="text-right">Qty</TableHead>
               <TableHead className="text-right">Amount</TableHead>
+              <TableHead>Scheme</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -113,8 +122,24 @@ export function GrnDetailClient({ grn, canEdit }: { grn: GrnDetail; canEdit: boo
                 <TableCell className="whitespace-nowrap">{format(new Date(i.expiryDate), "MMM yyyy")}</TableCell>
                 <TableCell className="text-right tabular-nums">₹{i.mrp.toFixed(2)}</TableCell>
                 <TableCell className="text-right tabular-nums">₹{i.rate.toFixed(2)}</TableCell>
-                <TableCell className="text-right tabular-nums">{i.qty}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {i.qty}
+                  {i.freeQty > 0 && <span className="text-muted-foreground"> +{i.freeQty} free</span>}
+                </TableCell>
                 <TableCell className="text-right tabular-nums">₹{(i.qty * i.rate).toFixed(2)}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {(i.freeQty > 0 || i.schemeDiscountPercent || i.schemeNote) && (
+                    <div className="flex flex-wrap items-center gap-1">
+                      {i.freeQty > 0 && (
+                        <Badge variant="outline" className="gap-1">
+                          <Gift className="h-3 w-3" /> {i.qty}+{i.freeQty}
+                        </Badge>
+                      )}
+                      {!!i.schemeDiscountPercent && <Badge variant="outline">{i.schemeDiscountPercent}% CD</Badge>}
+                      {i.schemeNote && <span>{i.schemeNote}</span>}
+                    </div>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -122,6 +147,11 @@ export function GrnDetailClient({ grn, canEdit }: { grn: GrnDetail; canEdit: boo
 
         <div className="text-right text-sm">
           Total: <span className="font-medium">₹{total.toFixed(2)}</span>
+          {schemeBenefit > 0 && (
+            <div className="text-muted-foreground">
+              Scheme benefit received: ₹{schemeBenefit.toFixed(2)}
+            </div>
+          )}
           {grn.ewayBillNo && (
             <div className="text-muted-foreground">E-way bill: {grn.ewayBillNo}</div>
           )}

@@ -19,7 +19,7 @@ import { ItemCombobox, type PurchasableItem } from "@/components/purchasing/item
 import { createGrn } from "@/lib/actions/grn";
 import { listOpenPurchaseOrdersForSupplier } from "@/lib/actions/purchase-orders";
 import type { PlainSupplier } from "@/lib/serialize";
-import { Pencil, Trash2, TriangleAlert } from "lucide-react";
+import { Gift, Pencil, Trash2, TriangleAlert } from "lucide-react";
 
 type DraftRow = {
   key: string;
@@ -30,6 +30,9 @@ type DraftRow = {
   mrp: string;
   rate: string;
   qty: string;
+  freeQty: string;
+  schemeDiscountPercent: string;
+  schemeNote: string;
 };
 
 function rowWarnings(row: DraftRow): string[] {
@@ -81,6 +84,12 @@ export function GrnForm({
   const [mrp, setMrp] = useState("");
   const [rate, setRate] = useState("");
   const [qty, setQty] = useState("");
+  // Scheme fields default collapsed — most GRN lines have no scheme, and
+  // the common Item→...→Qty→Enter flow must stay exactly as fast as before.
+  const [schemeOpen, setSchemeOpen] = useState(false);
+  const [freeQty, setFreeQty] = useState("");
+  const [schemeDiscountPercent, setSchemeDiscountPercent] = useState("");
+  const [schemeNote, setSchemeNote] = useState("");
 
   const itemRef = useRef<HTMLInputElement>(null);
   const batchNoRef = useRef<HTMLInputElement>(null);
@@ -89,6 +98,9 @@ export function GrnForm({
   const mrpRef = useRef<HTMLInputElement>(null);
   const rateRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
+  const freeQtyRef = useRef<HTMLInputElement>(null);
+  const schemeDiscountRef = useRef<HTMLInputElement>(null);
+  const schemeNoteRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (prefillItemId && selectedItem) {
@@ -168,15 +180,24 @@ export function GrnForm({
         mrp,
         rate: rate || "0",
         qty,
+        freeQty: freeQty || "0",
+        schemeDiscountPercent,
+        schemeNote: schemeNote.trim(),
       },
     ]);
 
     // Carry forward mfg/expiry/MRP/rate — a distributor invoice often
     // repeats these across several consecutive lines. Item, batch no. and
-    // qty almost always differ per line, so those clear.
+    // qty almost always differ per line, so those clear. Scheme fields are
+    // per-line too (a scheme rarely applies to every line), so they clear
+    // and the panel collapses back.
     setSelectedItem(null);
     setBatchNo("");
     setQty("");
+    setFreeQty("");
+    setSchemeDiscountPercent("");
+    setSchemeNote("");
+    setSchemeOpen(false);
     focusItemInput();
   }
 
@@ -193,10 +214,19 @@ export function GrnForm({
     setMrp(row.mrp);
     setRate(row.rate);
     setQty(row.qty);
+    setFreeQty(row.freeQty === "0" ? "" : row.freeQty);
+    setSchemeDiscountPercent(row.schemeDiscountPercent);
+    setSchemeNote(row.schemeNote);
+    setSchemeOpen(row.freeQty !== "0" || !!row.schemeDiscountPercent || !!row.schemeNote);
     batchNoRef.current?.focus();
   }
 
   const total = rows.reduce((sum, r) => sum + Number(r.qty) * Number(r.rate), 0);
+  const schemeBenefit = rows.reduce(
+    (sum, r) =>
+      sum + Number(r.freeQty) * Number(r.rate) + Number(r.qty) * Number(r.rate) * (Number(r.schemeDiscountPercent || 0) / 100),
+    0
+  );
 
   function onSave() {
     if (!supplierId) {
@@ -231,6 +261,9 @@ export function GrnForm({
             mrp: Number(r.mrp),
             rate: Number(r.rate),
             qty: Number(r.qty),
+            freeQty: Number(r.freeQty || 0),
+            schemeDiscountPercent: r.schemeDiscountPercent ? Number(r.schemeDiscountPercent) : undefined,
+            schemeNote: r.schemeNote || undefined,
           })),
         });
         toast.success("GRN saved — stock updated");
@@ -427,11 +460,84 @@ export function GrnForm({
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  commitRow();
+                  if (schemeOpen) freeQtyRef.current?.focus();
+                  else commitRow();
                 }
               }}
             />
           </div>
+          <Button
+            type="button"
+            variant={schemeOpen ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => {
+              setSchemeOpen((v) => !v);
+              if (!schemeOpen) requestAnimationFrame(() => freeQtyRef.current?.focus());
+            }}
+          >
+            <Gift className="h-4 w-4" /> Scheme
+          </Button>
+          {schemeOpen && (
+            <>
+              <div className="w-20 space-y-1">
+                <Label htmlFor="grnFreeQty" className="text-xs text-muted-foreground">
+                  Free qty
+                </Label>
+                <Input
+                  id="grnFreeQty"
+                  ref={freeQtyRef}
+                  type="number"
+                  value={freeQty}
+                  onChange={(e) => setFreeQty(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      schemeDiscountRef.current?.focus();
+                    }
+                  }}
+                />
+              </div>
+              <div className="w-24 space-y-1">
+                <Label htmlFor="grnSchemeDiscount" className="text-xs text-muted-foreground">
+                  CD %
+                </Label>
+                <Input
+                  id="grnSchemeDiscount"
+                  ref={schemeDiscountRef}
+                  type="number"
+                  step="0.01"
+                  value={schemeDiscountPercent}
+                  onChange={(e) => setSchemeDiscountPercent(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      schemeNoteRef.current?.focus();
+                    }
+                  }}
+                />
+              </div>
+              <div className="w-40 space-y-1">
+                <Label htmlFor="grnSchemeNote" className="text-xs text-muted-foreground">
+                  Scheme note
+                </Label>
+                <Input
+                  id="grnSchemeNote"
+                  ref={schemeNoteRef}
+                  value={schemeNote}
+                  onChange={(e) => setSchemeNote(e.target.value)}
+                  placeholder="e.g. Diwali 10+1"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      commitRow();
+                    }
+                  }}
+                />
+              </div>
+            </>
+          )}
           <Button type="button" onClick={commitRow}>
             Add row
           </Button>
@@ -448,6 +554,7 @@ export function GrnForm({
                 <TableHead className="text-right">Rate</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Scheme</TableHead>
                 <TableHead>Warnings</TableHead>
                 <TableHead className="w-16" />
               </TableRow>
@@ -468,6 +575,20 @@ export function GrnForm({
                       <TableCell className="text-right tabular-nums">{r.qty}</TableCell>
                       <TableCell className="text-right tabular-nums">
                         ₹{(Number(r.qty) * Number(r.rate)).toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {(Number(r.freeQty) > 0 || r.schemeDiscountPercent) && (
+                          <div className="flex flex-wrap items-center gap-1">
+                            {Number(r.freeQty) > 0 && (
+                              <Badge variant="outline" className="gap-1">
+                                <Gift className="h-3 w-3" /> +{r.freeQty}
+                              </Badge>
+                            )}
+                            {r.schemeDiscountPercent && (
+                              <Badge variant="outline">{r.schemeDiscountPercent}% CD</Badge>
+                            )}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         {warnings.length > 0 && (
@@ -508,7 +629,7 @@ export function GrnForm({
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-16 text-center text-muted-foreground">
+                  <TableCell colSpan={10} className="h-16 text-center text-muted-foreground">
                     No items added yet.
                   </TableCell>
                 </TableRow>
@@ -519,6 +640,9 @@ export function GrnForm({
         {rows.length > 0 && (
           <div className="text-right text-sm text-muted-foreground">
             Total: <span className="font-medium text-foreground">₹{total.toFixed(2)}</span>
+            {schemeBenefit > 0 && (
+              <div>Scheme benefit: <span className="font-medium text-foreground">₹{schemeBenefit.toFixed(2)}</span></div>
+            )}
           </div>
         )}
       </div>

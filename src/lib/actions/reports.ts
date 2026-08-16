@@ -12,6 +12,10 @@ function dateWindow(from: string, to: string) {
   return { fromDate, toDate };
 }
 
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
 export interface SalesRegisterRow {
   id: string;
   invoiceNo: string;
@@ -212,5 +216,77 @@ export async function getStockLedger(from: string, to: string): Promise<StockLed
   }
 
   rows.sort((a, b) => b.date.getTime() - a.date.getTime());
+  return rows;
+}
+
+export interface SchemeBenefitRow {
+  grnId: string;
+  receivedAt: Date;
+  supplierName: string;
+  manufacturer: string;
+  itemName: string;
+  batchNo: string;
+  qty: number;
+  rate: number;
+  freeQty: number;
+  freeGoodsValue: number;
+  schemeDiscountPercent: number;
+  cashDiscountValue: number;
+  totalBenefit: number;
+  schemeNote: string | null;
+}
+
+/**
+ * Every GRN line that actually recorded a scheme (free qty, a cash-discount
+ * %, or just a note) within the window, plus supplier and manufacturer
+ * roll-ups — "distributor" is Supplier (already modeled), "manufacturer" is
+ * Item.manufacturer (already a free-text field on Item), so no new master
+ * data is needed for either grouping. Benefit values are computed here at
+ * read time from GrnItem's stored qty/rate/freeQty/schemeDiscountPercent —
+ * deliberately not persisted, since they're a pure function of those fields
+ * and storing them redundantly would just be another place to drift.
+ */
+export async function getSchemeBenefitsReport(from: string, to: string): Promise<SchemeBenefitRow[]> {
+  const session = await requireRole(["owner", "pharmacist"]);
+  const branchFilter = await getBranchFilter(session.user.tenantId, session.user.role);
+  const { fromDate, toDate } = dateWindow(from, to);
+
+  const grns = await prisma.grn.findMany({
+    where: { tenantId: session.user.tenantId, ...branchFilter, receivedAt: { gte: fromDate, lte: toDate } },
+    include: {
+      supplier: { select: { name: true } },
+      items: { include: { item: { select: { name: true, manufacturer: true } } } },
+    },
+    orderBy: { receivedAt: "desc" },
+  });
+
+  const rows: SchemeBenefitRow[] = [];
+  for (const g of grns) {
+    for (const i of g.items) {
+      const discountPercent = Number(i.schemeDiscountPercent ?? 0);
+      if (i.freeQty === 0 && discountPercent === 0 && !i.schemeNote) continue;
+
+      const rate = Number(i.rate);
+      const freeGoodsValue = i.freeQty * rate;
+      const cashDiscountValue = i.qty * rate * (discountPercent / 100);
+
+      rows.push({
+        grnId: g.id,
+        receivedAt: g.receivedAt,
+        supplierName: g.supplier.name,
+        manufacturer: i.item.manufacturer || "Unspecified",
+        itemName: i.item.name,
+        batchNo: i.batchNo,
+        qty: i.qty,
+        rate,
+        freeQty: i.freeQty,
+        freeGoodsValue: round2(freeGoodsValue),
+        schemeDiscountPercent: discountPercent,
+        cashDiscountValue: round2(cashDiscountValue),
+        totalBenefit: round2(freeGoodsValue + cashDiscountValue),
+        schemeNote: i.schemeNote,
+      });
+    }
+  }
   return rows;
 }

@@ -88,10 +88,19 @@ export function serializePurchaseOrderItem(item: PurchaseOrderItem): PlainPurcha
   return { ...item, rate: Number(item.rate) };
 }
 
-export type PlainGrnItem = Omit<GrnItem, "mrp" | "rate"> & { mrp: number; rate: number };
+export type PlainGrnItem = Omit<GrnItem, "mrp" | "rate" | "schemeDiscountPercent"> & {
+  mrp: number;
+  rate: number;
+  schemeDiscountPercent: number | null;
+};
 
 export function serializeGrnItem(item: GrnItem): PlainGrnItem {
-  return { ...item, mrp: Number(item.mrp), rate: Number(item.rate) };
+  return {
+    ...item,
+    mrp: Number(item.mrp),
+    rate: Number(item.rate),
+    schemeDiscountPercent: item.schemeDiscountPercent ? Number(item.schemeDiscountPercent) : null,
+  };
 }
 
 export type PlainPurchaseReturn = Omit<PurchaseReturn, "totalAmount"> & { totalAmount: number };
