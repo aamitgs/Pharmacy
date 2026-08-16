@@ -8,6 +8,7 @@ import { getLicenseExpiryWindow } from "@/lib/actions/branch-settings";
 import { getBillingInfo } from "@/lib/actions/subscription";
 import { getBrandingInfo } from "@/lib/actions/branding";
 import { getApiAccessInfo } from "@/lib/actions/api-keys";
+import { getRefillReminderSettings } from "@/lib/actions/refill-reminders";
 import { listWards } from "@/lib/actions/wards";
 import { listStaff } from "@/lib/actions/staff";
 import { listBranches } from "@/lib/actions/branches";
@@ -22,6 +23,7 @@ import { BrandingPanel } from "@/components/settings/branding-panel";
 import { ApiPanel } from "@/components/settings/api-panel";
 import { WardsPanel } from "@/components/settings/wards-panel";
 import { StaffPanel } from "@/components/settings/staff-panel";
+import { RefillRemindersPanel } from "@/components/settings/refill-reminders-panel";
 import { Separator } from "@/components/ui/separator";
 
 export default async function SettingsPage() {
@@ -37,7 +39,9 @@ export default async function SettingsPage() {
   const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: session.user.tenantId } });
   const isHospital = tenant.tenantType === "hospital";
 
-  const [backupStatus, cloudBackupInfo, user, licenseWindow, billing, branding, apiAccess, wards, staff, branches] = await Promise.all([
+  const canReminders = session.user.role === "owner";
+
+  const [backupStatus, cloudBackupInfo, user, licenseWindow, billing, branding, apiAccess, wards, staff, branches, refillReminders] = await Promise.all([
     getBackupStatus(),
     canBackup ? getCloudBackupInfo() : Promise.resolve(null),
     prisma.user.findUniqueOrThrow({ where: { id: session.user.id } }),
@@ -48,6 +52,7 @@ export default async function SettingsPage() {
     isHospital && canManageUsers(session.user.role) ? listWards() : Promise.resolve(null),
     canManageStaff ? listStaff() : Promise.resolve(null),
     canManageStaff ? listBranches() : Promise.resolve(null),
+    canReminders ? getRefillReminderSettings() : Promise.resolve(null),
   ]);
 
   return (
@@ -64,6 +69,7 @@ export default async function SettingsPage() {
           {canBilling && <TabsTrigger value="api">API</TabsTrigger>}
           {canManageStaff && <TabsTrigger value="staff">Staff</TabsTrigger>}
           {isHospital && wards && <TabsTrigger value="wards">Wards</TabsTrigger>}
+          {canReminders && refillReminders && <TabsTrigger value="reminders">Reminders</TabsTrigger>}
         </TabsList>
         <TabsContent value="backup" className="pt-4">
           <Suspense fallback={null}>
@@ -116,6 +122,11 @@ export default async function SettingsPage() {
         {isHospital && wards && (
           <TabsContent value="wards" className="pt-4">
             <WardsPanel initialWards={wards} branches={branches ?? []} />
+          </TabsContent>
+        )}
+        {canReminders && refillReminders && (
+          <TabsContent value="reminders" className="pt-4">
+            <RefillRemindersPanel initialEnabled={refillReminders.enabled} />
           </TabsContent>
         )}
       </Tabs>

@@ -68,6 +68,21 @@ in `docker-compose.yml`) and logs the attempt the same way a manual backup
 does — it'll show up in Settings and count toward the 48h staleness check on
 the dashboard.
 
+### Scheduled refill reminders
+
+Same pattern as scheduled backups above — the "Send reminders now" button in
+Settings > Reminders works regardless of any of this. For an unattended daily
+run, point a host-level cron at the app container:
+
+```cron
+0 9 * * * curl -sf -X POST http://localhost:3000/api/refill-reminders/scheduled \
+  -H "x-refill-reminders-secret: $REFILL_REMINDERS_CRON_SECRET"
+```
+
+Checks every tenant with reminders enabled in Settings; a customer only
+receives a message if their own opt-in (on their customer detail page) is
+also on.
+
 ### Restoring a backup
 
 Backup files are AES-256-GCM encrypted (`[12-byte IV][16-byte auth tag][ciphertext]`,
@@ -680,6 +695,59 @@ the actual per-branch/per-staff numbers by hand, and confirmed every
 section (including staff revenue) agrees with the header total —
 deliberately checked for exactly the kind of same-page inconsistency a
 scrutinizing owner would notice.
+
+### Refill reminders via WhatsApp
+
+Detects a customer's repeat-purchase habit per item and sends a WhatsApp
+nudge shortly before they're likely due to reorder — reusing the Phase 5
+delivery mechanism (`sendWhatsAppMessage`) and the `reminder`
+`WhatsAppMessageType` that already existed in the enum but was unused
+until now, not a new integration.
+
+- **Detection** (`src/lib/refill-reminders/detect.ts`): for each opted-in
+  customer, groups their completed sales by item over a trailing 365-day
+  window, and for any item bought twice or more, projects the next
+  expected purchase date from the average interval between past
+  purchases of that item — the same explainable-statistics approach as
+  Checkpoint 2's reorder suggestions, no model. A reminder is due when
+  that projected date falls within the next 3 days
+  (`LEAD_DAYS`) or up to 14 days in the past (`STALE_DAYS`) — far enough
+  past and the prediction is treated as stale (they likely refilled
+  elsewhere) rather than sent as noise.
+- **Opt-in, two levels**: off by default at both. `Tenant.refillRemindersEnabled`
+  (Settings > Reminders, owner-only) is the pharmacy-wide kill switch;
+  `Customer.refillRemindersOptIn` (a toggle directly on the customer's
+  detail page) is per-customer. A customer is only ever messaged with
+  both on.
+- **Dedupe, exactly once per cycle**: `RefillReminder` records the anchor
+  purchase (`lastPurchaseDate`) each attempt was computed from, with a
+  unique constraint on `(customerId, itemId, lastPurchaseDate)` — so a
+  cycle is never re-messaged on a later run regardless of whether the
+  first attempt succeeded or failed, without relying on a fuzzy
+  date-window check that could drift between runs.
+- **Delivery**: same `sendWhatsAppMessage` provider as receipts/statements,
+  logged to the same `WhatsAppLog` table with `messageType: "reminder"`.
+  A pharmacy without Gupshup credentials configured gets the same
+  friendly "not configured" failure as every other WhatsApp send, not a
+  crash.
+- **Two ways to run it**: the owner's "Send reminders now" button in
+  Settings (single tenant, on demand), and `POST
+  /api/refill-reminders/scheduled` for an external cron — same
+  shared-secret-header pattern as `/api/backup/scheduled`
+  (`REFILL_REMINDERS_CRON_SECRET`), and excluded from the auth middleware
+  matcher the same way that route is.
+
+Verified live against a real running instance: backdated two real sales
+of the same item 20 days apart for an opted-in customer, confirmed the
+detection math ("due ~1 day ago" from a ~20-day habit) correctly flagged
+it, ran the real send (which correctly reported Gupshup "not configured"
+since no real credentials exist in this environment — same caveat as
+Checkpoint 1's cloud providers), confirmed the `RefillReminder` and
+`WhatsAppLog` rows landed correctly, ran it a second time and confirmed
+no duplicate reminder was created for the same cycle, and confirmed the
+customer detail page renders both the opt-in toggle and the reminder
+history. Also confirmed the scheduled route rejects a bad shared secret
+(401) and accepts the real one.
 
 ## Scope / what's not here
 

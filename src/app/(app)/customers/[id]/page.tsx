@@ -2,10 +2,14 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { getCustomer } from "@/lib/actions/customers";
+import { listRefillReminderHistory } from "@/lib/actions/refill-reminders";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { CustomerLedgerTable } from "@/components/customers/customer-ledger-table";
 import { CustomerPaymentForm } from "@/components/customers/customer-payment-form";
+import { RefillOptInToggle } from "@/components/customers/refill-optin-toggle";
 import { ChevronLeft, FileText } from "lucide-react";
+import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
 export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -17,6 +21,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   if (!customer) notFound();
 
   const canManage = session.user.role === "owner" || session.user.role === "pharmacist";
+  const reminderHistory = customer.refillRemindersOptIn ? await listRefillReminderHistory(id) : [];
 
   return (
     <div className="space-y-4 p-6">
@@ -53,6 +58,25 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           ₹{customer.outstandingBalance.toFixed(2)}
         </div>
       </div>
+
+      {canManage && <RefillOptInToggle customerId={customer.id} initialOptIn={customer.refillRemindersOptIn} />}
+
+      {reminderHistory.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-medium">Refill reminders sent</h2>
+          <div className="space-y-1">
+            {reminderHistory.map((r) => (
+              <div key={r.id} className="flex items-center justify-between rounded-lg border p-2 text-sm">
+                <span>{r.itemName}</span>
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <span>{format(new Date(r.sentAt), "dd MMM yyyy")}</span>
+                  <Badge variant={r.status === "sent" ? "outline" : "secondary"}>{r.status}</Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center justify-between pt-2">
         <h2 className="text-sm font-medium">Ledger</h2>

@@ -41,6 +41,10 @@ model Tenant {
   customDomain                  String?   @unique
   customDomainVerificationToken String?
   customDomainVerifiedAt        DateTime?
+  // Phase 8: tenant-level kill switch for refill reminders — the scheduled
+  // job (and the manual "Send now" action) both skip a tenant entirely
+  // unless this is on, independent of any individual customer's opt-in.
+  refillRemindersEnabled        Boolean   @default(false)
   createdAt                     DateTime  @default(now())
 
   branches      Branch[]
@@ -79,6 +83,8 @@ model Tenant {
   ipdDispenses      IpdDispense[]
 
   cloudBackupConnections CloudBackupConnection[]
+
+  refillReminders RefillReminder[]
 
   @@map("tenants")
 }
@@ -227,6 +233,7 @@ model Item {
   stockTransferItems  StockTransferItem[]
   indentItems         IndentItem[]
   ipdDispenses        IpdDispense[]
+  refillReminders     RefillReminder[]
 
   narcoticRegisterEntries NarcoticRegisterEntry[]
 
@@ -287,28 +294,33 @@ model Batch {
 // ---------------------------------------------------------------------------
 
 model Customer {
-  id                 String   @id @default(cuid())
-  tenantId           String
-  name               String
-  phone              String?
-  creditLimit        Decimal? @db.Decimal(10, 2)
+  id                   String   @id @default(cuid())
+  tenantId             String
+  name                 String
+  phone                String?
+  creditLimit          Decimal? @db.Decimal(10, 2)
   // Cached for convenience only — never written to directly by app code.
   // The real balance is always SUM(CustomerLedgerEntry.amount) for this
   // customer (credit sales positive, payments negative); see
   // src/lib/actions/customers.ts.
-  outstandingBalance Decimal  @default(0) @db.Decimal(12, 2)
+  outstandingBalance   Decimal  @default(0) @db.Decimal(12, 2)
   // Loyalty tier is computed/reassigned automatically whenever
   // cumulativeSpend crosses a tier threshold (see resolveLoyaltyTier in
   // src/lib/actions/pos.ts) — never set directly through a form.
-  loyaltyTierId      String?
-  cumulativeSpend    Decimal  @default(0) @db.Decimal(12, 2)
-  createdAt          DateTime @default(now())
+  loyaltyTierId        String?
+  cumulativeSpend      Decimal  @default(0) @db.Decimal(12, 2)
+  // Phase 8: per-customer opt-in for automated refill-reminder WhatsApp
+  // messages — off by default even when the tenant-level toggle is on, so
+  // no customer gets messaged without asking them first.
+  refillRemindersOptIn Boolean  @default(false)
+  createdAt            DateTime @default(now())
 
-  tenant        Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  loyaltyTier   LoyaltyTier?          @relation(fields: [loyaltyTierId], references: [id])
-  salesInvoices SalesInvoice[]
-  ledgerEntries CustomerLedgerEntry[]
-  whatsappLogs  WhatsAppLog[]
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  loyaltyTier     LoyaltyTier?          @relation(fields: [loyaltyTierId], references: [id])
+  salesInvoices   SalesInvoice[]
+  ledgerEntries   CustomerLedgerEntry[]
+  whatsappLogs    WhatsAppLog[]
+  refillReminders RefillReminder[]
 
   @@index([tenantId])
   @@index([tenantId, phone])
@@ -349,6 +361,37 @@ model WhatsAppLog {
   @@index([customerId])
   @@index([invoiceId])
   @@map("whatsapp_logs")
+}
+
+/**
+ * Phase 8: one row per attempted refill reminder for a given customer+item
+ * purchase cycle. `lastPurchaseDate` is the anchor purchase the projection
+ * was computed from; the unique constraint on
+ * (customerId, itemId, lastPurchaseDate) is what actually prevents a
+ * duplicate reminder for the same cycle — not a date-window check — so it
+ * stays correct even if the projected expectedDate shifts slightly between
+ * scheduled runs. Delivery status/note reuse the same WhatsAppLog write as
+ * every other WhatsApp message, this table exists purely for the dedupe key
+ * and to drive the "next reminder due" read in the UI.
+ */
+model RefillReminder {
+  id               String         @id @default(cuid())
+  tenantId         String
+  customerId       String
+  itemId           String
+  lastPurchaseDate DateTime
+  expectedDate     DateTime
+  status           WhatsAppStatus
+  sentAt           DateTime       @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  item     Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, itemId, lastPurchaseDate])
+  @@index([tenantId])
+  @@index([customerId])
+  @@map("refill_reminders")
 }
 
 enum CustomerLedgerEntryType {

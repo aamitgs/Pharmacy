@@ -272,6 +272,19 @@ export async function seedTenantSlice(suffix: string) {
       },
     });
 
+    // Phase 8: refill reminder fixture.
+    const refillReminder = await tx.refillReminder.create({
+      data: {
+        id: `refillrem-${suffix}`,
+        tenantId: tenant.id,
+        customerId: customer.id,
+        itemId: item.id,
+        lastPurchaseDate: new Date("2026-06-01"),
+        expectedDate: new Date("2026-07-01"),
+        status: "sent",
+      },
+    });
+
     // Phase 7: Hospital Mode fixtures — one full vertical slice, same as
     // everything above.
     const ward = await tx.ward.create({
@@ -358,6 +371,7 @@ export async function seedTenantSlice(suffix: string) {
       tenantSubscriptionId: tenantSubscription.id,
       apiKeyId: apiKey.id,
       cloudBackupConnectionId: cloudBackupConnection.id,
+      refillReminderId: refillReminder.id,
       wardId: ward.id,
       wardBatchId: wardBatch.id,
       wardAssignmentId: wardAssignment.id,
