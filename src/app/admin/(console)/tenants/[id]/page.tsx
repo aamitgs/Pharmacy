@@ -1,15 +1,22 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { format } from "date-fns";
-import { getTenantForAdmin } from "@/lib/actions/admin";
+import { format, formatDistanceToNow } from "date-fns";
+import { getTenantForAdmin, getTenantUsageMetrics } from "@/lib/actions/admin";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChevronLeft } from "lucide-react";
 import { TenantAdminControls } from "./tenant-admin-controls";
 
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
 export default async function AdminTenantDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { tenant, plans } = await getTenantForAdmin(id);
+  const [{ tenant, plans }, usage] = await Promise.all([getTenantForAdmin(id), getTenantUsageMetrics(id)]);
   if (!tenant) notFound();
 
   return (
@@ -48,6 +55,38 @@ export default async function AdminTenantDetailPage({ params }: { params: Promis
           <CardContent className="text-2xl font-semibold">{tenant._count.salesInvoices}</CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium">
+            Usage <span className="font-normal text-muted-foreground">(support/billing — not visible to the tenant)</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div>
+            <div className="text-xs text-muted-foreground">Active users (30d)</div>
+            <div className="text-xl font-semibold">{usage.activeUserCount30d}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Invoices today / this month</div>
+            <div className="text-xl font-semibold">
+              {usage.invoicesToday} / {usage.invoicesThisMonth}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Storage used</div>
+            <div className="text-xl font-semibold">{formatBytes(usage.storageUsedBytes)}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">API calls (lifetime)</div>
+            <div className="text-xl font-semibold">{usage.apiCallVolumeTotal.toLocaleString("en-IN")}</div>
+            <div className="text-[11px] text-muted-foreground">
+              {usage.apiKeysActive} active key{usage.apiKeysActive === 1 ? "" : "s"}
+              {usage.apiLastUsedAt && ` · last used ${formatDistanceToNow(usage.apiLastUsedAt, { addSuffix: true })}`}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <TenantAdminControls
         tenantId={tenant.id}

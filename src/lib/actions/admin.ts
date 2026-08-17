@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { basePrisma } from "@/lib/prisma";
 import { createAdminSession, destroyAdminSession, requireSuperAdmin } from "@/lib/admin-auth";
+import { getTenantStorageBytes } from "@/lib/observability/storage-usage";
 import type { PrismaClient } from "@/generated/prisma/client";
 
 type BypassClient = Omit<PrismaClient, "$connect" | "$disconnect" | "$on" | "$transaction" | "$extends">;
@@ -40,21 +41,50 @@ export async function adminSignOut() {
   redirect("/admin/login");
 }
 
+// Phase 11.3: no activity in 14 days is a simple, visible churn-risk flag
+// right in the list — a support/billing operator scanning this table
+// shouldn't have to open every tenant to spot a going-quiet account.
+const STALE_ACTIVITY_DAYS = 14;
+
+/**
+ * Phase 11.3: "last activity" is the churn-risk-at-a-glance signal this
+ * list needed — the most recent AuditLog entry per tenant (that table
+ * already exists purely as the compliance-facing "who did what" record;
+ * this reads it, it doesn't duplicate it). One groupBy for every tenant's
+ * most-recent timestamp, not a per-tenant query — this list can show up
+ * to 200 rows. The staleness comparison against "now" is computed here
+ * (a server action, not a component) rather than in the page component,
+ * since React Compiler's purity analysis forbids calling Date.now()
+ * during a component's render.
+ */
 export async function listTenantsForAdmin(query?: string) {
   await requireSuperAdmin();
-  return withBypass((tx) =>
-    tx.tenant.findMany({
-      where: query
-        ? { pharmacyName: { contains: query, mode: "insensitive" } }
-        : undefined,
-      include: {
-        subscription: { include: { plan: true } },
-        _count: { select: { users: true, branches: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 200,
-    })
-  );
+  const [tenants, lastActivity] = await Promise.all([
+    withBypass((tx) =>
+      tx.tenant.findMany({
+        where: query
+          ? { pharmacyName: { contains: query, mode: "insensitive" } }
+          : undefined,
+        include: {
+          subscription: { include: { plan: true } },
+          _count: { select: { users: true, branches: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+      })
+    ),
+    withBypass((tx) => tx.auditLog.groupBy({ by: ["tenantId"], _max: { createdAt: true } })),
+  ]);
+  const lastActivityByTenant = new Map(lastActivity.map((row) => [row.tenantId, row._max.createdAt]));
+  const staleActivityCutoff = Date.now() - STALE_ACTIVITY_DAYS * 86400000;
+  return tenants.map((t) => {
+    const lastActivityAt = lastActivityByTenant.get(t.id) ?? null;
+    return {
+      ...t,
+      lastActivityAt,
+      isActivityStale: lastActivityAt !== null && lastActivityAt.getTime() < staleActivityCutoff,
+    };
+  });
 }
 
 export async function getTenantForAdmin(tenantId: string) {
@@ -105,6 +135,58 @@ export async function overrideTenantPlan(tenantId: string, planCode: string) {
     });
   });
   revalidatePath(`/admin/tenants/${tenantId}`);
+}
+
+/**
+ * Phase 11.3: per-tenant usage metrics for the Super-Admin console's own
+ * support/billing operations — operator-facing only, never surfaced to
+ * the tenant itself. "Active users" reads the existing AuditLog (who
+ * actually did something in the last 30 days), not a new tracking
+ * mechanism; "storage used" is real on-disk bytes for that tenant's
+ * prescription uploads; "API call volume" is ApiKey.requestCount, a
+ * running counter incremented in src/lib/api-auth.ts on every
+ * authenticated request.
+ */
+export async function getTenantUsageMetrics(tenantId: string) {
+  await requireSuperAdmin();
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  const [activeUsers, invoicesToday, invoicesThisMonth, apiKeys, storageBytes] = await Promise.all([
+    withBypass((tx) =>
+      tx.auditLog.findMany({
+        where: { tenantId, createdAt: { gte: last30Days } },
+        select: { userId: true },
+        distinct: ["userId"],
+      })
+    ),
+    withBypass((tx) =>
+      tx.salesInvoice.count({ where: { tenantId, status: "completed", invoiceDate: { gte: startOfToday } } })
+    ),
+    withBypass((tx) =>
+      tx.salesInvoice.count({ where: { tenantId, status: "completed", invoiceDate: { gte: startOfMonth } } })
+    ),
+    withBypass((tx) =>
+      tx.apiKey.findMany({ where: { tenantId }, select: { requestCount: true, lastUsedAt: true, revokedAt: true } })
+    ),
+    getTenantStorageBytes(tenantId),
+  ]);
+
+  return {
+    activeUserCount30d: activeUsers.length,
+    invoicesToday,
+    invoicesThisMonth,
+    storageUsedBytes: storageBytes,
+    apiCallVolumeTotal: apiKeys.reduce((sum, k) => sum + k.requestCount, 0),
+    apiKeysActive: apiKeys.filter((k) => !k.revokedAt).length,
+    apiLastUsedAt: apiKeys.reduce<Date | null>((latest, k) => {
+      if (!k.lastUsedAt) return latest;
+      return !latest || k.lastUsedAt > latest ? k.lastUsedAt : latest;
+    }, null),
+  };
 }
 
 /** Tenants past their trial with nothing converted, or with a cancelled

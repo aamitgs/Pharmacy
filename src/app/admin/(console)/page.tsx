@@ -2,7 +2,8 @@ import Link from "next/link";
 import { listTenantsForAdmin } from "@/lib/actions/admin";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
+import { cn } from "@/lib/utils";
 
 export default async function AdminTenantsPage() {
   const tenants = await listTenantsForAdmin();
@@ -22,6 +23,7 @@ export default async function AdminTenantsPage() {
               <TableHead>Status</TableHead>
               <TableHead>Branches</TableHead>
               <TableHead>Users</TableHead>
+              <TableHead>Last activity</TableHead>
               <TableHead>Created</TableHead>
               <TableHead />
             </TableRow>
@@ -40,6 +42,20 @@ export default async function AdminTenantsPage() {
                 </TableCell>
                 <TableCell>{t._count.branches}</TableCell>
                 <TableCell>{t._count.users}</TableCell>
+                <TableCell>
+                  {t.lastActivityAt ? (
+                    <span
+                      className={cn(
+                        "text-sm",
+                        t.isActivityStale ? "font-medium text-warning-foreground" : "text-muted-foreground"
+                      )}
+                    >
+                      {formatDistanceToNow(t.lastActivityAt, { addSuffix: true })}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">No activity yet</span>
+                  )}
+                </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {format(t.createdAt, "dd MMM yyyy")}
                 </TableCell>
@@ -52,7 +68,7 @@ export default async function AdminTenantsPage() {
             ))}
             {tenants.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                   No tenants yet.
                 </TableCell>
               </TableRow>

@@ -55,7 +55,10 @@ export async function authenticateApiRequest(req: Request): Promise<{ tenantId: 
 
   await basePrisma.$transaction([
     basePrisma.$executeRaw`SELECT set_config('app.rls_bypass', 'true', true)`,
-    basePrisma.apiKey.update({ where: { id: apiKey.id }, data: { lastUsedAt: new Date() } }),
+    basePrisma.apiKey.update({
+      where: { id: apiKey.id },
+      data: { lastUsedAt: new Date(), requestCount: { increment: 1 } },
+    }),
   ]);
 
   return { tenantId: apiKey.tenantId, apiKeyId: apiKey.id };

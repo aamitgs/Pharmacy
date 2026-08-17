@@ -1486,6 +1486,10 @@ model ApiKey {
   // recognize which key is which in a list — never enough to reconstruct it.
   keyPrefix  String
   lastUsedAt DateTime?
+  // Phase 11.3: a running total, incremented alongside lastUsedAt on every
+  // authenticated request (src/lib/api-auth.ts) — the "API call volume"
+  // signal the Super-Admin console's per-tenant usage metrics need.
+  requestCount Int @default(0)
   revokedAt  DateTime?
   createdAt  DateTime  @default(now())
 
