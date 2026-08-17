@@ -98,6 +98,8 @@ model Tenant {
   customerOtps   CustomerOtp[]
   refillRequests RefillRequest[]
 
+  pushSubscriptions PushSubscription[]
+
   @@map("tenants")
 }
 
@@ -399,6 +401,30 @@ model RefillRequest {
   @@index([tenantId])
   @@index([customerId])
   @@map("refill_requests")
+}
+
+/**
+ * A staff member's Web Push subscription for the owner mobile PWA — one row
+ * per browser/device the user granted notification permission on (a user
+ * can have several: phone + desktop). endpoint is unique per browser
+ * install, so re-subscribing (e.g. after clearing site data) just creates a
+ * fresh row rather than colliding.
+ */
+model PushSubscription {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  authKey   String
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 
 enum WhatsAppMessageType {
@@ -852,6 +878,8 @@ model User {
   ipdDispensesRecorded IpdDispense[]    @relation("IpdDispenseDispensedBy")
 
   cloudBackupConnectionsMade CloudBackupConnection[]
+
+  pushSubscriptions PushSubscription[]
 
   @@unique([tenantId, email])
   @@index([tenantId])

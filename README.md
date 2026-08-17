@@ -87,6 +87,21 @@ Checks every tenant with reminders enabled in Settings; a customer only
 receives a message if their own opt-in (on their customer detail page) is
 also on.
 
+### Scheduled owner push notifications
+
+Same pattern again — the owner PWA's immediate indent-approval push works
+regardless of any of this; this schedule adds a daily digest (low stock,
+license renewals, pending indents) on top:
+
+```cron
+0 8 * * * curl -sf -X POST http://localhost:3000/api/push/scheduled \
+  -H "x-push-notifications-secret: $PUSH_NOTIFICATIONS_CRON_SECRET"
+```
+
+Requires `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` to be set
+(generate a pair with `npx web-push generate-vapid-keys`) and at least one
+owner to have enabled notifications in Settings on their device.
+
 ### Restoring a backup
 
 Backup files are AES-256-GCM encrypted (`[12-byte IV][16-byte auth tag][ciphertext]`,
@@ -974,6 +989,69 @@ status page. Then logged in as staff and confirmed the request appeared
 on `/refill-requests` linked to the correct receipt, and that the
 dashboard's pending-count card matched.
 
+### Owner mobile PWA
+
+Makes the owner-relevant screens (dashboard, alerts, analytics, indent
+approvals) installable as a standalone app, with push notifications for
+the things an owner needs to act on away from the counter — reusing PWA
+support over a native app per the confirmed recommendation (same codebase,
+no separate app-store release process for a single-operator pharmacy
+business).
+
+- **Installable**: `src/app/manifest.ts` (Next's special-file convention,
+  auto-served at `/manifest.webmanifest` with the `<link rel="manifest">`
+  tag injected automatically) plus a platform-level icon — deliberately
+  not per-tenant branded, same reasoning as any multi-tenant SaaS's app
+  icon not being reskinned per customer.
+- **Service worker** (`public/sw.js`): caches the four owner-relevant
+  routes as an app shell (network-first, falling back to cache when
+  offline) and handles `push`/`notificationclick` events. Deliberately
+  narrow — the POS billing screen already has its own, much more careful
+  offline-write handling (`src/lib/offline`, Phase 5) that this must not
+  interfere with, so it never intercepts POS requests.
+- **Push notifications** via the standard Web Push API (VAPID, not a
+  third-party push SaaS) — `PushSubscription` stores each device's
+  endpoint/keys, gated to the owner role only (Settings > Notifications),
+  matching the spec's "owner mobile experience" framing. Two triggers:
+  an immediate push the moment an indent is submitted for approval
+  (`src/lib/actions/indents.ts`), and a scheduled daily digest (`POST
+  /api/push/scheduled`, same shared-secret cron pattern as the backup and
+  refill-reminder routes) summarizing low-stock items, license renewals
+  due, and pending indent approvals — reusing the same counting logic as
+  the Alerts screen, computed tenant-wide rather than for one branch since
+  there's no "currently selected branch" outside a user session. Same
+  "not configured" contract as every other optional integration
+  (WhatsApp, Razorpay, cloud backup): missing `VAPID_PUBLIC_KEY` /
+  `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` disables the Enable button with an
+  explanatory message instead of crashing.
+- **Remote approval actions**: the existing `/indents` approve/reject
+  buttons are what a push notification's tap opens directly to — no
+  separate mobile-only approval UI was needed since the screen was already
+  responsive.
+
+Verified live against a real running instance, with one caveat: this
+sandboxed dev environment has no outbound route to a real push service
+(Chrome's FCM), so a browser's `pushManager.subscribe()` call itself
+cannot complete here — the same category of limitation as Gupshup
+WhatsApp, Razorpay, and the cloud-backup OAuth providers elsewhere in this
+README, not a bug in this code. What *was* verified end-to-end: logged in
+as the owner (through real TOTP MFA), confirmed the manifest link and
+service worker registration on `/dashboard`; confirmed `/manifest.webmanifest`,
+`/sw.js`, and `/icons/*` are reachable without a session (fixed a bug this
+surfaced — they were being redirected to `/login` by the auth middleware
+before this, now excluded in `src/proxy.ts`'s matcher the same way
+`favicon.ico` already was); confirmed the Notifications tab renders with
+the correct "configured" state and Enable button, and is completely absent
+for a non-owner (`counter_staff`) session; confirmed `POST
+/api/push/scheduled` returns 401 with no/wrong secret and 200 with the
+correct one; confirmed `runPushDigestForTenant` computes correct
+low-stock/license-expiry counts against real demo data; and separately
+confirmed the actual Web Push send mechanics (VAPID JWT signing, RFC 8291
+`aes128gcm` payload encryption, HTTPS delivery) complete successfully
+end-to-end against a real ECDH subscriber keypair and a local HTTPS
+server standing in for a push service — the one piece a browser-driven
+test in this environment couldn't reach directly.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,
@@ -983,11 +1061,15 @@ shipped in Phase 7; cloud backup, AI-assisted suggestions, cross-branch
 analytics, WhatsApp refill reminders, GRN scheme tracking, Tally sync, and
 insurance/TPA cashless billing shipped in Phase 8 (see above, each with
 its own live-verification caveats where a real third-party credential
-wasn't available in this environment). What's still deliberately out of
-scope: a native mobile app, franchise/dealer management, marketplace
-integration (1mg/PharmEasy/Netmeds — explicitly skipped in Phase 8), a
-full self-serve SaaS billing-history UI (Settings > Billing shows the
-current plan and lets you switch — there's no invoice history/PDF
+wasn't available in this environment); a customer-facing portal and an
+installable owner PWA with push notifications shipped in Phase 9 (see
+above — a *native* mobile app was confirmed skipped in favor of the PWA
+approach). What's still deliberately out of scope: rate contracts,
+cold-chain tracking, customer feedback capture, and franchise/dealer
+management (all planned for the rest of Phase 9, not yet built),
+marketplace integration (1mg/PharmEasy/Netmeds — explicitly skipped in
+Phase 8), a full self-serve SaaS billing-history UI (Settings > Billing
+shows the current plan and lets you switch — there's no invoice history/PDF
 receipts screen), and replacing the explainable statistical approach with
 an actual ML model. Also still out of scope from earlier phases: direct
 GST portal API integration beyond the GSP-compatible e-invoice/e-way bill

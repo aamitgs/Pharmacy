@@ -24,6 +24,7 @@ import { ApiPanel } from "@/components/settings/api-panel";
 import { WardsPanel } from "@/components/settings/wards-panel";
 import { StaffPanel } from "@/components/settings/staff-panel";
 import { RefillRemindersPanel } from "@/components/settings/refill-reminders-panel";
+import { NotificationsPanel } from "@/components/settings/notifications-panel";
 import { Separator } from "@/components/ui/separator";
 
 export default async function SettingsPage() {
@@ -70,6 +71,7 @@ export default async function SettingsPage() {
           {canManageStaff && <TabsTrigger value="staff">Staff</TabsTrigger>}
           {isHospital && wards && <TabsTrigger value="wards">Wards</TabsTrigger>}
           {canReminders && refillReminders && <TabsTrigger value="reminders">Reminders</TabsTrigger>}
+          {canReminders && <TabsTrigger value="notifications">Notifications</TabsTrigger>}
         </TabsList>
         <TabsContent value="backup" className="pt-4">
           <Suspense fallback={null}>
@@ -127,6 +129,11 @@ export default async function SettingsPage() {
         {canReminders && refillReminders && (
           <TabsContent value="reminders" className="pt-4">
             <RefillRemindersPanel initialEnabled={refillReminders.enabled} />
+          </TabsContent>
+        )}
+        {canReminders && (
+          <TabsContent value="notifications" className="pt-4">
+            <NotificationsPanel />
           </TabsContent>
         )}
       </Tabs>

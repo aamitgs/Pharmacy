@@ -6,6 +6,7 @@ import type { UserRole } from "@/generated/prisma/client";
 import { cn } from "@/lib/utils";
 import { SignOutButton } from "@/components/sign-out-button";
 import { BranchSwitcher } from "@/components/branch-switcher";
+import { ServiceWorkerRegister } from "@/components/pwa/sw-register";
 import {
   LayoutDashboard,
   ScanBarcode,
@@ -209,6 +210,7 @@ export function AppShell({
 
   return (
     <div className="flex min-h-screen">
+      <ServiceWorkerRegister />
       <aside className="flex w-56 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground print:hidden">
         <div className="flex h-12 items-center gap-2 border-b px-4">
           {user.logoUrl && (

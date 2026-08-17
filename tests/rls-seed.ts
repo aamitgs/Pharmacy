@@ -372,6 +372,18 @@ export async function seedTenantSlice(suffix: string) {
       },
     });
 
+    // Phase 9: owner mobile PWA push subscription fixture.
+    const pushSubscription = await tx.pushSubscription.create({
+      data: {
+        id: `push-${suffix}`,
+        tenantId: tenant.id,
+        userId: owner.id,
+        endpoint: `https://push.example.com/${suffix}`,
+        p256dh: "p256dh-key",
+        authKey: "auth-key",
+      },
+    });
+
     return {
       tenantId: tenant.id,
       branchId: branch.id,
@@ -417,6 +429,7 @@ export async function seedTenantSlice(suffix: string) {
       ipdDispenseId: ipdDispense.id,
       customerOtpId: customerOtp.id,
       refillRequestId: refillRequest.id,
+      pushSubscriptionId: pushSubscription.id,
     };
   });
 }

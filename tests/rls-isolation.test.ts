@@ -85,6 +85,7 @@ const cases: Case[] = [
   // Phase 9: customer portal
   { label: "CustomerOtp", aId: () => A.customerOtpId, bId: () => B.customerOtpId, find: (id) => prisma.customerOtp.findUnique({ where: { id } }) },
   { label: "RefillRequest", aId: () => A.refillRequestId, bId: () => B.refillRequestId, find: (id) => prisma.refillRequest.findUnique({ where: { id } }) },
+  { label: "PushSubscription", aId: () => A.pushSubscriptionId, bId: () => B.pushSubscriptionId, find: (id) => prisma.pushSubscription.findUnique({ where: { id } }) },
   // Indirect (no direct tenantId column — scoped via EXISTS into parent)
   { label: "Batch (indirect via Item)", aId: () => A.batchId, bId: () => B.batchId, find: (id) => prisma.batch.findUnique({ where: { id } }) },
   { label: "SalesInvoiceItem (indirect via SalesInvoice)", aId: () => A.invoiceItemId, bId: () => B.invoiceItemId, find: (id) => prisma.salesInvoiceItem.findUnique({ where: { id } }) },

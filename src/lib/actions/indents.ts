@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma, runInTenantTransaction } from "@/lib/prisma";
 import { requireHospitalTenant, assertWardAccess, resolveNurseWardIds } from "@/lib/hospital-scope";
 import { writeAuditLog } from "@/lib/audit";
+import { notifyOwnersPush } from "@/lib/push/notify";
 
 const APPROVAL_ROLES = ["owner", "pharmacist", "ward_pharmacist"] as const;
 
@@ -98,6 +99,15 @@ export async function createIndent(input: CreateIndentInput) {
   });
 
   revalidatePath("/indents");
+
+  // Best-effort — an owner's phone not being reachable right now shouldn't
+  // block the indent itself from being created.
+  notifyOwnersPush(tenant.id, {
+    title: "New indent request",
+    body: `${ward.name} requested ${parsed.items.length} item(s) for approval.`,
+    url: "/indents",
+  }).catch(() => {});
+
   return { id: indent.id };
 }
 
