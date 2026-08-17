@@ -1686,3 +1686,34 @@ model CloudBackupConnection {
   @@index([tenantId])
   @@map("cloud_backup_connections")
 }
+
+// ---------------------------------------------------------------------------
+// Drug interaction & duplicate-therapy safety alerts — Phase 10.2
+// ---------------------------------------------------------------------------
+
+enum InteractionSeverity {
+  caution
+  warning
+}
+
+// A small, curated starter set of well-known, clinically-significant
+// interaction pairs — explicitly NOT a comprehensive drug-interaction
+// database (out of scope per the phase spec). A shared reference catalog,
+// not tenant data — same reasoning as SubscriptionPlan above: every tenant
+// needs to check against the same rule list, nobody edits it through the
+// app, so it deliberately has no tenantId and no RLS policy. Only trusted
+// internal seeding writes to it.
+//
+// compositionA/compositionB are matched case-insensitively against
+// Item.composition at billing time, checked in both directions, so each
+// pair only needs to be seeded once.
+model InteractionRule {
+  id           String              @id @default(cuid())
+  compositionA String
+  compositionB String
+  severity     InteractionSeverity
+  description  String
+  createdAt    DateTime            @default(now())
+
+  @@map("interaction_rules")
+}

@@ -189,6 +189,131 @@ async function main() {
     },
   });
 
+  // Phase 10.2: a small, curated starter set of well-known,
+  // clinically-significant interaction pairs (not a comprehensive
+  // drug-interaction database — see the model's comment in schema.prisma).
+  // Sourced from standard pharmacology teaching references (BNF/Stockley's
+  // Drug Interactions-style textbook-classic pairs), reviewed for accuracy
+  // before shipping rather than machine-translated/generated. Global
+  // reference data — seeded once, shared by every tenant, upserted by a
+  // deterministic id so re-running this script never duplicates rows.
+  const interactionRules: {
+    id: string;
+    compositionA: string;
+    compositionB: string;
+    severity: "caution" | "warning";
+    description: string;
+  }[] = [
+    {
+      id: "interaction-warfarin-aspirin",
+      compositionA: "Warfarin",
+      compositionB: "Aspirin",
+      severity: "warning",
+      description: "Combining an anticoagulant with an antiplatelet substantially raises bleeding risk — confirm this is intended and prescriber-reviewed.",
+    },
+    {
+      id: "interaction-warfarin-ibuprofen",
+      compositionA: "Warfarin",
+      compositionB: "Ibuprofen",
+      severity: "warning",
+      description: "NSAIDs can displace warfarin from plasma proteins and irritate the GI mucosa, increasing bleeding risk when combined with an anticoagulant.",
+    },
+    {
+      id: "interaction-warfarin-amiodarone",
+      compositionA: "Warfarin",
+      compositionB: "Amiodarone",
+      severity: "warning",
+      description: "Amiodarone significantly increases warfarin's anticoagulant effect — INR should be monitored closely with this combination.",
+    },
+    {
+      id: "interaction-aspirin-ibuprofen",
+      compositionA: "Aspirin",
+      compositionB: "Ibuprofen",
+      severity: "caution",
+      description: "Ibuprofen can blunt aspirin's cardioprotective antiplatelet effect and adds GI bleeding risk when taken together regularly.",
+    },
+    {
+      id: "interaction-sildenafil-nitroglycerin",
+      compositionA: "Sildenafil",
+      compositionB: "Nitroglycerin",
+      severity: "warning",
+      description: "PDE5 inhibitors combined with nitrates can cause a severe, potentially life-threatening drop in blood pressure.",
+    },
+    {
+      id: "interaction-enalapril-spironolactone",
+      compositionA: "Enalapril",
+      compositionB: "Spironolactone",
+      severity: "warning",
+      description: "ACE inhibitors combined with a potassium-sparing diuretic raise the risk of dangerous hyperkalemia.",
+    },
+    {
+      id: "interaction-atorvastatin-clarithromycin",
+      compositionA: "Atorvastatin",
+      compositionB: "Clarithromycin",
+      severity: "warning",
+      description: "Macrolide antibiotics can raise statin blood levels substantially, increasing the risk of myopathy/rhabdomyolysis.",
+    },
+    {
+      id: "interaction-methotrexate-ibuprofen",
+      compositionA: "Methotrexate",
+      compositionB: "Ibuprofen",
+      severity: "warning",
+      description: "NSAIDs can reduce methotrexate clearance, raising the risk of methotrexate toxicity.",
+    },
+    {
+      id: "interaction-digoxin-furosemide",
+      compositionA: "Digoxin",
+      compositionB: "Furosemide",
+      severity: "caution",
+      description: "Loop diuretics can cause hypokalemia, which increases the risk of digoxin toxicity — electrolytes are worth monitoring.",
+    },
+    {
+      id: "interaction-ciprofloxacin-calcium-carbonate",
+      compositionA: "Ciprofloxacin",
+      compositionB: "Calcium Carbonate",
+      severity: "caution",
+      description: "Calcium/antacids chelate fluoroquinolones and substantially reduce absorption — space doses several hours apart.",
+    },
+    {
+      id: "interaction-levothyroxine-calcium-carbonate",
+      compositionA: "Levothyroxine",
+      compositionB: "Calcium Carbonate",
+      severity: "caution",
+      description: "Calcium supplements/antacids reduce levothyroxine absorption — space doses at least 4 hours apart.",
+    },
+    {
+      id: "interaction-tramadol-sertraline",
+      compositionA: "Tramadol",
+      compositionB: "Sertraline",
+      severity: "warning",
+      description: "Combining tramadol with an SSRI raises the risk of serotonin syndrome.",
+    },
+    {
+      id: "interaction-clopidogrel-omeprazole",
+      compositionA: "Clopidogrel",
+      compositionB: "Omeprazole",
+      severity: "caution",
+      description: "Omeprazole can inhibit the enzyme that activates clopidogrel, potentially reducing its antiplatelet effect.",
+    },
+    {
+      id: "interaction-amlodipine-simvastatin",
+      compositionA: "Amlodipine",
+      compositionB: "Simvastatin",
+      severity: "caution",
+      description: "Amlodipine raises simvastatin exposure — a lower simvastatin dose is usually advised with this combination.",
+    },
+    {
+      id: "interaction-domperidone-fluconazole",
+      compositionA: "Domperidone",
+      compositionB: "Fluconazole",
+      severity: "warning",
+      description: "Azole antifungals can raise domperidone levels and QT-prolongation risk — this combination needs caution.",
+    },
+  ];
+  for (const rule of interactionRules) {
+    await prisma.interactionRule.upsert({ where: { id: rule.id }, update: {}, create: rule });
+  }
+
   await prisma.superAdmin.upsert({
     where: { email: "admin@platform.local" },
     update: {},

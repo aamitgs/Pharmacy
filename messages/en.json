@@ -88,6 +88,9 @@
     "pendingFromPortal": "pending from the customer portal"
   },
   "pos": {
+    "safety": {
+      "title": "Safety check"
+    },
     "search": {
       "placeholder": "Search by item name, generic name, or scan barcode…",
       "outOfStock": "Out of stock",

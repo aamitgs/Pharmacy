@@ -16,6 +16,7 @@ export default async function PosPage() {
       tenantId={data.tenantId}
       receiptHeader={data.receiptHeader}
       insuranceProviders={data.insuranceProviders}
+      interactionRules={data.interactionRules}
     />
   );
 }

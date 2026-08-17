@@ -7,9 +7,10 @@ import type { UserRole } from "@/generated/prisma/client";
 import { useCartStore } from "@/store/cart-store";
 import { computeBilling, effectiveDiscountPercent, type BillingLineInput, type StackedDiscountInput } from "@/lib/billing";
 import { applySchemes } from "@/lib/scheme-engine";
-import { completeSale, getPosData, verifyManagerPin, verifyPharmacistCredentials } from "@/lib/actions/pos";
+import { completeSale, getPosData, getRecentPurchaseCompositions, verifyManagerPin, verifyPharmacistCredentials } from "@/lib/actions/pos";
 import { validateCoupon } from "@/lib/actions/coupons";
 import { listActiveRateContractsForCustomer } from "@/lib/actions/rate-contracts";
+import { checkSafetyWarnings, type InteractionRuleLite, type CompositionRef } from "@/lib/interaction-check";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { saveCache, queueSale, listPendingSales, discardSale, newOfflineClientId } from "@/lib/offline/queue";
 import { syncPendingSales } from "@/lib/offline/sync";
@@ -21,6 +22,7 @@ import { OfflineReceiptOverlay } from "./offline-receipt-overlay";
 import { SearchPanel } from "./search-panel";
 import { CartTable } from "./cart-table";
 import { BottomBar } from "./bottom-bar";
+import { SafetyAlertsBanner } from "./safety-alerts-banner";
 import { PrescriptionFields } from "./prescription-fields";
 import { PrescriptionUpload } from "./prescription-upload";
 import { ManagerPinDialog } from "./manager-pin-dialog";
@@ -46,6 +48,7 @@ export function PosScreen({
   tenantId,
   receiptHeader,
   insuranceProviders,
+  interactionRules,
 }: {
   items: PosItem[];
   customers: PosCustomer[];
@@ -57,6 +60,7 @@ export function PosScreen({
   tenantId: string;
   receiptHeader: ReceiptHeader;
   insuranceProviders: { id: string; name: string }[];
+  interactionRules: InteractionRuleLite[];
 }) {
   const router = useRouter();
   const store = useCartStore();
@@ -192,6 +196,39 @@ export function PosScreen({
     () => (store.customerId ? new Map(contractRows.map((r) => [r.itemId, r.contractRate])) : new Map<string, number>()),
     [store.customerId, contractRows]
   );
+
+  // Phase 10.2: duplicate-therapy check's "recent purchase history" half —
+  // same re-fetch-by-customerId pattern as rate contracts just above.
+  const [recentPurchaseRows, setRecentPurchaseRows] = useState<CompositionRef[]>([]);
+  useEffect(() => {
+    if (!store.customerId) return;
+    let cancelled = false;
+    getRecentPurchaseCompositions(store.customerId)
+      .then((rows) => {
+        if (!cancelled) setRecentPurchaseRows(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setRecentPurchaseRows([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [store.customerId]);
+  // No customer selected -> no purchase history can apply, regardless of
+  // whatever rows a previous customer's fetch left in state (same reasoning
+  // as contractRateByItemId above).
+  const recentPurchases = useMemo(
+    () => (store.customerId ? recentPurchaseRows : []),
+    [store.customerId, recentPurchaseRows]
+  );
+
+  const safetyWarnings = useMemo(() => {
+    const cartCompositions: CompositionRef[] = store.lines.map((l) => ({
+      name: l.itemName,
+      composition: catalogByItemId.get(l.itemId)?.composition ?? null,
+    }));
+    return checkSafetyWarnings(cartCompositions, recentPurchases, interactionRules);
+  }, [store.lines, catalogByItemId, recentPurchases, interactionRules]);
 
   const contractRateByLineId = useMemo(() => {
     const map = new Map<string, number>();
@@ -577,6 +614,8 @@ export function PosScreen({
             </div>
           </div>
         )}
+
+        <SafetyAlertsBanner warnings={safetyWarnings} />
 
         <CartTable
           lines={store.lines}

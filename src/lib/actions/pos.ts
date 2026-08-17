@@ -34,7 +34,7 @@ export async function getPosData() {
   // branches" (Owner's consolidated view is for reporting, not billing).
   const branchId = await resolveConcreteBranch(tenantId, session.user.role);
 
-  const [items, customers, doctors, tenant, schemes, branch, showPoweredBy, insuranceProviders] = await Promise.all([
+  const [items, customers, doctors, tenant, schemes, branch, showPoweredBy, insuranceProviders, interactionRules] = await Promise.all([
     // Deliberately not filtered to in-stock items only (Phase 8): an
     // out-of-stock item still needs to be findable by search so the POS
     // screen can offer same-composition substitutes inline instead of the
@@ -58,6 +58,13 @@ export async function getPosData() {
     branchId ? prisma.branch.findUnique({ where: { id: branchId } }) : null,
     shouldShowPoweredBy(tenantId),
     listActiveInsuranceProviders(tenantId),
+    // Phase 10.2: a shared, non-tenant-scoped reference catalog (see the
+    // model's comment in schema.prisma) — read via the same tenant-scoped
+    // `prisma` client as everything else here for consistency, but RLS
+    // isn't even enabled on this table, so every tenant sees the same rows.
+    prisma.interactionRule.findMany({
+      select: { compositionA: true, compositionB: true, severity: true, description: true },
+    }),
   ]);
 
   const balances = await computeCustomerOutstandingBalances(tenantId, customers.map((c) => c.id));
@@ -83,6 +90,7 @@ export async function getPosData() {
     staffDiscountCapPercent: Number(tenant.staffDiscountCapPercent),
     role: session.user.role,
     schemes,
+    interactionRules,
     // Everything an offline-queued sale's locally-rendered receipt needs —
     // cached client-side so printing never requires a server round-trip.
     receiptHeader: {
@@ -105,6 +113,31 @@ export async function getPosData() {
         : null,
     },
   };
+}
+
+/**
+ * Phase 10.2: the "recent purchase history" half of the duplicate-therapy
+ * check — re-fetched by customerId whenever it changes, the same "client
+ * preview" pattern already used for rate contracts above. Looks at the
+ * customer's last 90 days of completed sales (a bounded, recent window —
+ * not their entire lifetime history) and returns each distinct item name +
+ * composition once, so the client can compare against what's currently in
+ * the cart without a per-keystroke round trip.
+ */
+export async function getRecentPurchaseCompositions(customerId: string) {
+  const session = await requireRetailSession();
+  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const lines = await prisma.salesInvoiceItem.findMany({
+    where: {
+      invoice: { tenantId: session.user.tenantId, customerId, status: "completed", invoiceDate: { gte: since } },
+    },
+    select: { item: { select: { name: true, composition: true } } },
+    distinct: ["itemId"],
+    take: 50,
+  });
+  return lines
+    .filter((l) => l.item.composition?.trim())
+    .map((l) => ({ name: l.item.name, composition: l.item.composition as string }));
 }
 
 export async function verifyManagerPin(pin: string) {

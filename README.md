@@ -1320,6 +1320,54 @@ fully in Hindi (`सबटोटल`, `कुल`, `डीएल (रिटे�
 the same Indian-formatted currency — the specific acceptance-criteria
 check ("including on a printed receipt").
 
+### Drug interaction & duplicate-therapy alerts
+
+A non-blocking safety banner on the POS billing screen — informational,
+never a hard block, per the design direction's explicit warning against
+over-alerting becoming noise staff learn to click through.
+
+- **`InteractionRule`** — a small, curated starter set of 15 well-known,
+  clinically-significant interaction pairs (Warfarin+Aspirin,
+  ACE-inhibitor+potassium-sparing diuretic, statin+macrolide, and similar
+  textbook-classic pairs), sourced from standard pharmacology teaching
+  references and reviewed for accuracy before shipping — not machine-
+  generated, and explicitly not a comprehensive drug-interaction database
+  (confirmed with the user before building, per the phase's own
+  instruction). A shared reference catalog, not tenant data — same
+  reasoning as `SubscriptionPlan`: every tenant needs to check against the
+  same rule list, so it deliberately has no `tenantId` and no RLS policy
+  (see the model's comment in `schema.prisma`), seeded once in
+  `prisma/seed.ts`.
+- **Duplicate-therapy check** — flags two items in the cart with the exact
+  same `Item.composition`, and separately, a cart item matching the
+  selected customer's own last 90 days of completed purchases (a new
+  `getRecentPurchaseCompositions` action, re-fetched by customer id the
+  same way rate contracts already are). Both are informational only —
+  there are legitimate reasons to re-sell the same composition.
+- **Interaction check** — any two distinct cart items whose compositions
+  match an `InteractionRule` pair, matched as a case-insensitive substring
+  in both directions (so a rule's `"Ibuprofen"` matches an item composition
+  like `"Ibuprofen 400mg"`), shown with the rule's own description and
+  severity (`caution`/`warning`).
+- **`src/lib/interaction-check.ts`** — the actual matching logic, a plain
+  synchronous function run client-side against data already on the page
+  (the cart, the interaction rules fetched once with the rest of
+  `getPosData`, and the customer's recent purchases fetched on selection).
+  No per-keystroke server round trip, so it's instant as the cart changes.
+- **`SafetyAlertsBanner`** — renders near the cart, above the line-item
+  table. Deliberately has no dismiss button: it just reflects live cart
+  state and disappears the moment the triggering item is removed, so it
+  can't become something staff learn to click through without reading.
+
+Verified live against a real running instance: added a Warfarin item and
+an Aspirin item to a cart and confirmed the interaction warning appeared
+with the rule's own description; added two different brand-name items
+both composed of Paracetamol 500mg and confirmed the cart-duplicate
+warning; completed a real sale of Paracetamol 500mg for a test customer,
+started a new sale for the same customer with a different Paracetamol
+brand, and confirmed the "sold recently" recent-purchase-history warning
+appeared; confirmed an empty/low-risk cart shows no banner at all.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,
