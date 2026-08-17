@@ -1429,6 +1429,56 @@ appears with nothing configured, added a reminder 3 days out with a
 appeared on both the dashboard and the Alerts screen, then deleted it via
 the Settings UI and confirmed it disappeared from both.
 
+### Accessibility polish
+
+- **High-contrast theme** — a per-user toggle (Settings > Accessibility,
+  same "personal preference, independent of tenant settings" pattern as
+  language) that swaps the app's CSS custom properties for a palette
+  actually checked against the WCAG 2.1 contrast formula, not eyeballed.
+  The *default* theme's `muted-foreground` and `border` colors were
+  measured first — 2.09:1 and 1.11:1 against the background, both well
+  under the 4.5:1 (normal text) / 3:1 (non-text UI component) AA
+  thresholds — confirming this was a real gap, not theater. The
+  high-contrast palette (`src/app/globals.css`'s `.high-contrast` block)
+  fixes every one of those pairings, including every color used as text
+  anywhere in the app (primary, destructive, success, warning). Applied
+  as a class on `AppShell`'s own wrapper (not the root `<html>`), since
+  it's scoped to the authenticated counter screens, not the public
+  login/portal pages.
+- **Touch targets** — audited the POS billing screen's actually-tapped
+  controls against the phase's 44×44px minimum: the cart's quantity input
+  and remove-line button, the payment-mode buttons, and the "Apply
+  coupon" button, plus the header's branch/language switchers (switched
+  routinely through a shift). Two new opt-in Button size variants
+  (`touch`, `icon-touch`) make this additive — every other button
+  elsewhere in the app keeps its existing size, since a global resize
+  would have meaningfully changed the density of screens this project
+  deliberately built compact (POS's own "keyboard-first" discount/rate/
+  tax columns, data tables across Reports, etc.). Smaller, low-frequency
+  controls (the per-line discount % field, the coupon-remove icon) were
+  deliberately left as-is rather than force-resizing every input in the
+  app.
+
+Verified live against a real running instance: toggled high-contrast on
+from Settings, confirmed the class applied and the resolved
+`muted-foreground` color actually got dark (not just present), confirmed
+it persisted across a fresh page load, then confirmed via real bounding-box
+measurements in the browser that the cart quantity input (56×44px), the
+remove-line button (44×44px), and the payment-mode buttons (44px tall)
+all meet the minimum, and confirmed the toggle turns off cleanly.
+
+### Phase 10 wrap-up
+
+All five Phase 10 items are now shipped: regional language UI (Hindi),
+drug interaction & duplicate-therapy alerts, staff training/certification,
+proactive GST filing reminders, and accessibility polish. Full-suite
+verification (typecheck, lint, `vitest run`, `next build`) passes across
+the combined phase. Localization coverage is intentionally partial (see
+that section above) — full infrastructure is wired app-wide, but only the
+screens the phase's own acceptance criteria exercise were translated;
+extending it further is additive (new keys + a `useTranslations` call),
+not a re-architecture.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,
@@ -1441,23 +1491,30 @@ its own live-verification caveats where a real third-party credential
 wasn't available in this environment); a customer-facing portal, an
 installable owner PWA with push notifications, rate contract management,
 cold-chain temperature tracking, customer feedback capture, and
-franchise/dealer management shipped in Phase 9 (see above — a *native*
-mobile app was confirmed skipped in favor of the PWA approach, cold-chain
-tracking is manual-entry only, no IoT/sensor integration, and franchise
-linking is reference-only, deliberately never merging member tenants'
-data, per the phase spec). Phase 9 is now fully complete. What's still
-deliberately out of scope: marketplace integration
+franchise/dealer management shipped in Phase 9; regional language UI
+(Hindi), drug interaction/duplicate-therapy safety alerts, a staff
+certification walkthrough, GST filing reminders, and a high-contrast/
+touch-target accessibility pass shipped in Phase 10 (see above — a
+*native* mobile app was confirmed skipped in favor of the PWA approach in
+Phase 9, cold-chain tracking is manual-entry only, franchise linking is
+reference-only, InteractionRule is a curated 15-pair starter set rather
+than a comprehensive drug-interaction database, and GST filing dates are
+tenant-configured rather than computed from tax rules, per each phase's
+own explicit scope notes). Phases 9 and 10 are now fully complete. What's
+still deliberately out of scope: marketplace integration
 (1mg/PharmEasy/Netmeds — explicitly skipped in
 Phase 8), a full self-serve SaaS billing-history UI (Settings > Billing
 shows the current plan and lets you switch — there's no invoice history/PDF
-receipts screen), and replacing the explainable statistical approach with
-an actual ML model. Also still out of scope from earlier phases: direct
-GST portal API integration beyond the GSP-compatible e-invoice/e-way bill
-provider (Phase 5), landed cost calculation beyond a flat per-unit GRN
-rate (Phase 8's scheme tracking blends free-scheme units into that rate,
-but doesn't apportion freight/other landed costs), and multi-state
-GSTIN/IGST logic beyond the basic intra-state assumption everywhere GST
-is computed (GSTR export, Tally sync).
+receipts screen), replacing the explainable statistical approach with an
+actual ML model, and a full LMS-style training platform (Phase 10's
+certification flow is a single guided walkthrough, not a course). Also
+still out of scope from earlier phases: direct GST portal API integration
+beyond the GSP-compatible e-invoice/e-way bill provider (Phase 5), landed
+cost calculation beyond a flat per-unit GRN rate (Phase 8's scheme
+tracking blends free-scheme units into that rate, but doesn't apportion
+freight/other landed costs), and multi-state GSTIN/IGST logic beyond the
+basic intra-state assumption everywhere GST is computed (GSTR export,
+Tally sync).
 
 ## Scripts
 

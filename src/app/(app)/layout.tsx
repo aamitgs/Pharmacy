@@ -14,7 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     prisma.tenant.findUnique({ where: { id: session.user.tenantId } }),
     resolveSelectedBranch(session.user.tenantId, session.user.role),
     shouldShowPoweredBy(session.user.tenantId),
-    prisma.user.findUnique({ where: { id: session.user.id }, select: { certifiedAt: true } }),
+    prisma.user.findUnique({ where: { id: session.user.id }, select: { certifiedAt: true, highContrast: true } }),
   ]);
 
   return (
@@ -28,6 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         showPoweredBy,
         tenantType: tenant?.tenantType,
         certifiedAt: currentUser?.certifiedAt ?? null,
+        highContrast: currentUser?.highContrast ?? false,
       }}
       branchScope={branchScope}
     >

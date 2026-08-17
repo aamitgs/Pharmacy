@@ -221,6 +221,10 @@ export function AppShell({
     // Phase 10.3: null/undefined -> the guided walkthrough hasn't been
     // completed yet.
     certifiedAt?: Date | null;
+    // Phase 10.5: applied on this component's own wrapper (not the root
+    // <html>) since it's a personal preference scoped to the authenticated
+    // counter screens, not the public login/portal pages.
+    highContrast?: boolean;
   };
   branchScope: {
     branches: { id: string; name: string }[];
@@ -241,7 +245,7 @@ export function AppShell({
   const needsCertification = CERTIFIABLE_ROLES.has(user.role) && !user.certifiedAt;
 
   return (
-    <div className="flex min-h-screen">
+    <div className={cn("flex min-h-screen", user.highContrast && "high-contrast")}>
       <ServiceWorkerRegister />
       <StaffWalkthrough open={needsCertification} />
       <aside className="flex w-56 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground print:hidden">

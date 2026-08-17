@@ -27,6 +27,7 @@ import { StaffPanel } from "@/components/settings/staff-panel";
 import { RefillRemindersPanel } from "@/components/settings/refill-reminders-panel";
 import { NotificationsPanel } from "@/components/settings/notifications-panel";
 import { LanguagePanel } from "@/components/settings/language-panel";
+import { AccessibilityPanel } from "@/components/settings/accessibility-panel";
 import { FeedbackPanel } from "@/components/settings/feedback-panel";
 import { getFeedbackSettings } from "@/lib/actions/customer-feedback";
 import { Separator } from "@/components/ui/separator";
@@ -71,6 +72,7 @@ export default async function SettingsPage() {
           <TabsTrigger value="data">Import / Export</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="language">Language</TabsTrigger>
+          <TabsTrigger value="accessibility">Accessibility</TabsTrigger>
           {canCompliance && <TabsTrigger value="compliance">Compliance</TabsTrigger>}
           {canBilling && <TabsTrigger value="branding">Branding</TabsTrigger>}
           {canBilling && <TabsTrigger value="billing">Billing</TabsTrigger>}
@@ -106,6 +108,9 @@ export default async function SettingsPage() {
         </TabsContent>
         <TabsContent value="language" className="pt-4">
           <LanguagePanel />
+        </TabsContent>
+        <TabsContent value="accessibility" className="pt-4">
+          <AccessibilityPanel initialHighContrast={user.highContrast} />
         </TabsContent>
         {canCompliance && licenseWindow && (
           <TabsContent value="compliance" className="pt-4">

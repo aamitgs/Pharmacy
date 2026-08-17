@@ -130,7 +130,7 @@ export function SearchPanel({
               return (
                 <div
                   key={item.id}
-                  className={cn("px-3 py-2 text-sm", i === highlighted ? "bg-accent/40" : "")}
+                  className={cn("min-h-11 px-3 py-2.5 text-sm", i === highlighted ? "bg-accent/40" : "")}
                   onMouseEnter={() => setHighlighted(i)}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -177,7 +177,7 @@ export function SearchPanel({
                 onMouseEnter={() => setHighlighted(i)}
                 onClick={() => selectItem(item)}
                 className={cn(
-                  "flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm",
+                  "flex min-h-11 w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm",
                   i === highlighted ? "bg-accent" : "hover:bg-accent/50"
                 )}
               >

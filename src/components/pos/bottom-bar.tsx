@@ -156,7 +156,7 @@ export function BottomBar({
                   <Button
                     key={m.value}
                     type="button"
-                    size="sm"
+                    size="touch"
                     variant={paymentMode === m.value ? "default" : "outline"}
                     disabled={disabled}
                     onClick={() => onPaymentModeChange(m.value)}
@@ -245,7 +245,7 @@ export function BottomBar({
                     }
                   }}
                 />
-                <Button type="button" size="sm" className="h-8" onClick={onApplyCoupon} disabled={couponChecking}>
+                <Button type="button" size="touch" onClick={onApplyCoupon} disabled={couponChecking}>
                   {t("apply")}
                 </Button>
               </div>

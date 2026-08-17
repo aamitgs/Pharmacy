@@ -47,7 +47,7 @@ export function BranchSwitcher({
     <div className="flex items-center gap-1.5">
       <Building2 className="h-4 w-4 text-muted-foreground" />
       <Select value={value} onValueChange={handleChange} disabled={pending}>
-        <SelectTrigger className="h-8 w-52">
+        <SelectTrigger className="h-11 w-52">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

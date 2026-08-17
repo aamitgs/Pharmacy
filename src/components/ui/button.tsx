@@ -32,6 +32,13 @@ const buttonVariants = cva(
         "icon-sm":
           "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
         "icon-lg": "size-9",
+        // Phase 10.5: a 44x44px minimum touch target (standard accessibility
+        // guidance) for controls that are actually tapped on a tablet-based
+        // counter — additive variants, opt-in per instance, so they don't
+        // change the default sizing anywhere this component is already
+        // used across the rest of the app.
+        touch: "h-11 gap-1.5 px-4 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3",
+        "icon-touch": "size-11",
       },
     },
     defaultVariants: {

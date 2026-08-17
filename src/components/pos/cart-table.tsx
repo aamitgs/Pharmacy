@@ -74,7 +74,7 @@ export function CartTable({
             <th className="w-24 px-3 py-2 text-right font-medium">{t("discountPercent")}</th>
             <th className="w-20 px-3 py-2 text-right font-medium">{t("taxPercent")}</th>
             <th className="w-28 px-3 py-2 text-right font-medium">{t("total")}</th>
-            <th className="w-10 px-2 py-2" />
+            <th className="w-14 px-2 py-2" />
           </tr>
         </thead>
         <tbody>
@@ -148,7 +148,7 @@ export function CartTable({
                         onQtyEnter();
                       }
                     }}
-                    className="h-8 text-right tabular-nums"
+                    className="h-11 text-right tabular-nums"
                   />
                 </td>
                 <td className="px-3 py-2 text-right align-top tabular-nums">
@@ -174,7 +174,7 @@ export function CartTable({
                   <Button
                     type="button"
                     variant="ghost"
-                    size="icon-sm"
+                    size="icon-touch"
                     onClick={() => onRemove(line.lineId)}
                     aria-label={t("remove", { name: line.itemName })}
                   >

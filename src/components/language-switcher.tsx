@@ -39,7 +39,7 @@ export function LanguageSwitcher() {
     <div className="flex items-center gap-1.5">
       <Languages className="h-4 w-4 text-muted-foreground" />
       <Select value={locale} onValueChange={handleChange} disabled={pending}>
-        <SelectTrigger className="h-8 w-32">
+        <SelectTrigger className="h-11 w-32">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

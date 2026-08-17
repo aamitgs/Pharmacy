@@ -1051,6 +1051,10 @@ model User {
   // the Owner (surfaced on the staff list), not a training record with any
   // enforcement behind it.
   certifiedAt  DateTime?
+  // Phase 10.5: per-user high-contrast display preference — a personal
+  // accessibility setting, same reasoning as `locale` above (independent
+  // per staff member, not tenant-wide).
+  highContrast Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
