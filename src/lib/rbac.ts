@@ -1,4 +1,5 @@
 import "server-only";
+import * as Sentry from "@sentry/nextjs";
 import type { UserRole } from "@/generated/prisma/client";
 import { auth } from "@/auth";
 
@@ -9,9 +10,18 @@ export class UnauthorizedError extends Error {
   }
 }
 
+/**
+ * The one function nearly every server action calls first — also the
+ * cheapest place to attach tenant/user context to the current Sentry scope
+ * (Phase 11.1) and the structured logger (Phase 11.2), so a later
+ * exception in the same action is already tagged without touching each of
+ * this app's ~50 action files individually.
+ */
 export async function requireSession() {
   const session = await auth();
   if (!session?.user) throw new UnauthorizedError("Not signed in");
+  Sentry.getCurrentScope().setTag("tenantId", session.user.tenantId);
+  Sentry.getCurrentScope().setUser({ id: session.user.id });
   return session;
 }
 

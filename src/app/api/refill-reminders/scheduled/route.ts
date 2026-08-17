@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { basePrisma } from "@/lib/prisma";
 import { runRefillRemindersForTenant } from "@/lib/refill-reminders/detect";
+import { logError } from "@/lib/logger";
+import { reportError } from "@/lib/observability/report-error";
 
 // Intended to be hit by an OS-level cron / scheduler (see README), not by a
 // logged-in user — auth is a shared secret header, the same pattern as
@@ -27,7 +29,9 @@ export async function POST(req: NextRequest) {
     try {
       const result = await runRefillRemindersForTenant(tenantId);
       results.push({ tenantId, ...result });
-    } catch {
+    } catch (error) {
+      logError("Scheduled refill reminders run failed", { action: "refill-reminders.scheduled", tenantId }, error);
+      reportError(error, { action: "refill-reminders.scheduled", tenantId });
       results.push({ tenantId, sent: 0, failed: 0, checked: 0 });
     }
   }

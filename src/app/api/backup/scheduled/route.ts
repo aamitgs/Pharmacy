@@ -4,6 +4,8 @@ import path from "node:path";
 import { basePrisma, prisma, tenantContext } from "@/lib/prisma";
 import { encryptBackup } from "@/lib/backup-crypto";
 import { uploadBackupToProvider } from "@/lib/cloud-backup/upload";
+import { logError } from "@/lib/logger";
+import { reportError } from "@/lib/observability/report-error";
 
 // Intended to be hit by an OS-level cron / scheduler (see README), not by a
 // logged-in user — auth is a shared secret header rather than a session.
@@ -82,7 +84,9 @@ export async function POST(req: NextRequest) {
           })
         );
       }
-    } catch {
+    } catch (error) {
+      logError("Scheduled backup failed", { action: "backup.scheduled", tenantId }, error);
+      reportError(error, { action: "backup.scheduled", tenantId });
       await tenantContext.run({ tenantId }, () =>
         prisma.backupLog.create({ data: { tenantId, destination: "local", status: "failed" } })
       );

@@ -8,6 +8,9 @@ import { requireSession } from "@/lib/rbac";
 import { sendWhatsAppMessage, type WhatsAppSendResult } from "@/lib/whatsapp/provider";
 import { getInvoiceForReceipt } from "@/lib/actions/invoices";
 import { getCustomerStatement } from "@/lib/actions/customers";
+import { reportError } from "@/lib/observability/report-error";
+
+const WHATSAPP_NOT_CONFIGURED_PREFIX = "WhatsApp is not configured for this pharmacy";
 
 type MessageType = "receipt" | "statement" | "reminder";
 
@@ -30,6 +33,13 @@ async function logAndReturn(params: {
       note: params.result.note,
     },
   });
+  if (!params.result.success && params.result.note && !params.result.note.startsWith(WHATSAPP_NOT_CONFIGURED_PREFIX)) {
+    reportError(new Error(params.result.note), {
+      action: `whatsapp.${params.messageType}`,
+      tenantId: params.tenantId,
+      invoiceId: params.invoiceId ?? undefined,
+    });
+  }
   return params.result;
 }
 

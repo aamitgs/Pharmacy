@@ -2,6 +2,17 @@ import "server-only";
 import { format } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { generateEinvoice, generateEwayBill, type EinvoiceResult, type EwayBillResult } from "./provider";
+import { reportError } from "@/lib/observability/report-error";
+
+// A genuine attempt-and-fail is worth an operator's attention; a
+// deliberately-unconfigured provider isn't an error, it's an unused
+// feature — see provider.ts's NOT_CONFIGURED_NOTE.
+const NOT_CONFIGURED_PREFIX = "E-invoice/e-way bill provider is not configured";
+
+function reportGspFailure(action: string, tenantId: string, note: string | undefined, extra: Record<string, string>) {
+  if (!note || note.startsWith(NOT_CONFIGURED_PREFIX)) return;
+  reportError(new Error(note), { action, tenantId, ...extra });
+}
 
 /**
  * Plain internal functions (no "use server", no session) so they can run
@@ -42,6 +53,8 @@ export async function runEinvoiceAttempt(invoiceId: string): Promise<EinvoiceRes
       where: { id: invoiceId },
       data: { einvoiceIrn: result.irn, einvoiceAckNo: result.ackNo, einvoiceQrData: result.qrData },
     });
+  } else {
+    reportGspFailure("einvoice.generate", invoice.tenantId, result.note, { invoiceId });
   }
 
   return result;
@@ -67,6 +80,8 @@ export async function runEwayBillAttemptForInvoice(invoiceId: string): Promise<E
 
   if (result.success) {
     await prisma.salesInvoice.update({ where: { id: invoiceId }, data: { ewayBillNo: result.ewayBillNo } });
+  } else {
+    reportGspFailure("ewaybill.generate.invoice", invoice.tenantId, result.note, { invoiceId });
   }
 
   return result;
@@ -94,6 +109,8 @@ export async function runEwayBillAttemptForGrn(grnId: string): Promise<EwayBillR
 
   if (result.success) {
     await prisma.grn.update({ where: { id: grnId }, data: { ewayBillNo: result.ewayBillNo } });
+  } else {
+    reportGspFailure("ewaybill.generate.grn", grn.tenantId, result.note, { grnId });
   }
 
   return result;

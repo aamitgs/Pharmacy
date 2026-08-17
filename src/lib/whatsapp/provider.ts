@@ -1,4 +1,5 @@
 import "server-only";
+import { logWarn } from "@/lib/logger";
 
 // Provider: Gupshup (https://www.gupshup.io/developer/docs/bot-platform/guide/whatsapp-api-documentation)
 // chosen for its well-documented REST API and low setup friction for a
@@ -56,13 +57,14 @@ export async function sendWhatsAppMessage(message: WhatsAppMessage): Promise<Wha
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      return { success: false, note: `Gupshup API error ${res.status}: ${body.slice(0, 200)}` };
+      const note = `Gupshup API error ${res.status}: ${body.slice(0, 200)}`;
+      logWarn(note, { action: "whatsapp.send", status: String(res.status) });
+      return { success: false, note };
     }
     return { success: true };
   } catch (e) {
-    return {
-      success: false,
-      note: e instanceof Error ? `Send failed: ${e.message}` : "Send failed: unknown error",
-    };
+    const note = e instanceof Error ? `Send failed: ${e.message}` : "Send failed: unknown error";
+    logWarn(note, { action: "whatsapp.send" });
+    return { success: false, note };
   }
 }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { basePrisma } from "@/lib/prisma";
 import { runPushDigestForTenant } from "@/lib/push/digest";
+import { logError } from "@/lib/logger";
+import { reportError } from "@/lib/observability/report-error";
 
 // Same shared-secret cron pattern as /api/backup/scheduled and
 // /api/refill-reminders/scheduled. Iterates every tenant that has at least
@@ -24,7 +26,9 @@ export async function POST(req: NextRequest) {
     try {
       const result = await runPushDigestForTenant(tenantId);
       results.push({ tenantId, ...result });
-    } catch {
+    } catch (error) {
+      logError("Scheduled push digest run failed", { action: "push.scheduled", tenantId }, error);
+      reportError(error, { action: "push.scheduled", tenantId });
       results.push({ tenantId, lowStockCount: 0, licenseExpiryCount: 0, pendingIndentCount: 0, sent: 0, failed: 0 });
     }
   }
