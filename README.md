@@ -1,10 +1,14 @@
-# Pharmacy Billing — Phases 1–3 (Core Billing + Purchase & Inventory + Compliance)
+# Pharmacy Billing — Phases 1–8
 
-A GST-compliant, keyboard-first counter-billing system for a single-tenant
-retail pharmacy — extended with the supply side (purchase orders, GRN,
-purchase returns, supplier ledger) and with regulatory compliance (Schedule
-X narcotic register, GST/HSN/GSTR-ready reporting, prescription capture +
-pharmacist sign-off, license expiry tracking). See
+A GST-compliant, keyboard-first counter-billing system for a pharmacy,
+grown from a single-tenant retail counter into a multi-tenant SaaS: the
+supply side (purchase orders, GRN, purchase returns, supplier ledger,
+scheme tracking), regulatory compliance (Schedule X narcotic register,
+GST/HSN/GSTR-ready reporting, prescription capture + pharmacist sign-off,
+license expiry tracking), multi-branch operation, self-service
+signup/billing, an optional Hospital Mode (wards, indents, IPD dispensing),
+and a set of AI-assisted/analytics/ecosystem features (see
+[Phase 8](#phase-8-ai-analytics--ecosystem-integrations)). See
 [Scope](#scope--whats-not-here) for what's deliberately out of scope for now.
 
 ## Stack
@@ -571,7 +575,7 @@ integration work is explicitly not part of this phase).
 itself (this phase produces the consumption data an external HIS bills
 from, not an invoice), a full EMR, and direct Hospital OS integration work.
 
-## Phase 8: AI, analytics & ecosystem integrations (in progress)
+## Phase 8: AI, analytics & ecosystem integrations
 
 Built as a series of independent, user-confirmed checkpoints rather than
 one pass — see this phase's own spec for why (highest scope-creep risk in
@@ -894,21 +898,42 @@ insurer as a ledger, a separate Cash entry for the co-pay, and that
 every voucher (including this split one) still balanced to exactly
 zero.
 
+### Phase 8 wrap-up
+
+All seven scope items above shipped as independent, user-confirmed
+checkpoints, each verified live against a real running instance before
+moving to the next — the working style this phase's own spec called for,
+given it was flagged upfront as the highest scope-creep risk in the plan.
+Marketplace integration (1mg/PharmEasy/Netmeds order sync) was explicitly
+skipped per the priority-order discussion at the start of the phase — not
+attempted, not partially built. **Explicitly out of scope**, per this
+phase's own spec: a native mobile app, franchise/dealer management, full
+ecosystem integrations beyond what's listed above, and replacing the
+explainable statistical approach (reorder suggestions, refill-cycle
+detection) with an actual ML model.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,
 Marg/Vyapar importers, white-labeling beyond basic fields, a public API,
 real payment gateway integration — shipped in Phase 6; Hospital Mode
-shipped in Phase 7 (see above). What's still deliberately out of scope:
-AI-assisted features, a full self-serve SaaS billing-history UI (Settings >
-Billing shows the current plan and lets you switch — there's no invoice
-history/PDF receipts screen), and marketplace/accounting integrations.
-Also still out of scope from earlier phases: direct GST portal
-API integration beyond the GSP-compatible e-invoice/e-way bill provider
-(Phase 5), purchase scheme tracking (treated as a manual rate adjustment,
-not a modeled entity), landed cost calculation (GRN rate is a flat
-per-unit rate), and multi-state GSTIN/IGST logic beyond the basic
-intra-state assumption.
+shipped in Phase 7; cloud backup, AI-assisted suggestions, cross-branch
+analytics, WhatsApp refill reminders, GRN scheme tracking, Tally sync, and
+insurance/TPA cashless billing shipped in Phase 8 (see above, each with
+its own live-verification caveats where a real third-party credential
+wasn't available in this environment). What's still deliberately out of
+scope: a native mobile app, franchise/dealer management, marketplace
+integration (1mg/PharmEasy/Netmeds — explicitly skipped in Phase 8), a
+full self-serve SaaS billing-history UI (Settings > Billing shows the
+current plan and lets you switch — there's no invoice history/PDF
+receipts screen), and replacing the explainable statistical approach with
+an actual ML model. Also still out of scope from earlier phases: direct
+GST portal API integration beyond the GSP-compatible e-invoice/e-way bill
+provider (Phase 5), landed cost calculation beyond a flat per-unit GRN
+rate (Phase 8's scheme tracking blends free-scheme units into that rate,
+but doesn't apportion freight/other landed costs), and multi-state
+GSTIN/IGST logic beyond the basic intra-state assumption everywhere GST
+is computed (GSTR export, Tally sync).
 
 ## Scripts
 
