@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { updateBranding, setCustomDomain, verifyCustomDomain, clearCustomDomain } from "@/lib/actions/branding";
+import { updateBranding, setCustomDomain, verifyCustomDomain, clearCustomDomain, setPortalSlug } from "@/lib/actions/branding";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,7 @@ interface BrandingInfo {
   customDomainVerificationToken: string | null;
   customDomainVerifiedAt: Date | null;
   whiteLabelPlan: boolean;
+  portalSlug: string | null;
 }
 
 export function BrandingPanel({ initial }: { initial: BrandingInfo }) {
@@ -35,6 +36,22 @@ export function BrandingPanel({ initial }: { initial: BrandingInfo }) {
     verifiedAt: initial.customDomainVerifiedAt,
   });
   const [domainPending, startDomainTransition] = useTransition();
+
+  const [portalSlug, setPortalSlugValue] = useState(initial.portalSlug ?? "");
+  const [portalPending, startPortalTransition] = useTransition();
+  const portalUrl = typeof window !== "undefined" ? `${window.location.origin}/portal/${portalSlug}` : `/portal/${portalSlug}`;
+
+  function savePortalSlug() {
+    startPortalTransition(async () => {
+      try {
+        const result = await setPortalSlug(portalSlug);
+        setPortalSlugValue(result.portalSlug);
+        toast.success("Portal URL saved");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Could not save");
+      }
+    });
+  }
 
   function saveBranding() {
     startTransition(async () => {
@@ -154,6 +171,30 @@ export function BrandingPanel({ initial }: { initial: BrandingInfo }) {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="space-y-3 border-t pt-4">
+        <Label>Customer portal</Label>
+        <p className="text-sm text-muted-foreground">
+          Your existing customers sign in here with their phone number to see past orders and
+          request refills — branded with the logo/color above, since to them this is &quot;their
+          pharmacy&apos;s app,&quot; not a third-party tool.
+        </p>
+        <div className="flex items-center gap-2">
+          <Input
+            value={portalSlug}
+            onChange={(e) => setPortalSlugValue(e.target.value)}
+            className="max-w-xs"
+            placeholder="your-pharmacy"
+          />
+          <Button size="sm" variant="outline" disabled={portalPending} onClick={savePortalSlug}>
+            {portalPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Save
+          </Button>
+        </div>
+        <a href={`/portal/${portalSlug}`} target="_blank" rel="noreferrer" className="block break-all text-xs text-muted-foreground underline underline-offset-2">
+          {portalUrl}
+        </a>
       </div>
 
       <div className="space-y-3 border-t pt-4">

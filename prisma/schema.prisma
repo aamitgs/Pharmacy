@@ -45,6 +45,12 @@ model Tenant {
   // job (and the manual "Send now" action) both skip a tenant entirely
   // unless this is on, independent of any individual customer's opt-in.
   refillRemindersEnabled        Boolean   @default(false)
+  // Phase 9: the URL segment for this tenant's customer portal
+  // (/portal/<slug>) — auto-generated from pharmacyName at signup,
+  // owner-editable in Settings > Branding. Unique across the whole
+  // platform (portal routing has no other way to resolve which tenant a
+  // request is for — see src/app/portal/[slug]).
+  portalSlug                    String    @unique
   createdAt                     DateTime  @default(now())
 
   branches      Branch[]
@@ -88,6 +94,9 @@ model Tenant {
 
   insuranceProviders InsuranceProvider[]
   insuranceClaims    InsuranceClaim[]
+
+  customerOtps   CustomerOtp[]
+  refillRequests RefillRequest[]
 
   @@map("tenants")
 }
@@ -324,11 +333,72 @@ model Customer {
   ledgerEntries   CustomerLedgerEntry[]
   whatsappLogs    WhatsAppLog[]
   refillReminders RefillReminder[]
+  otps            CustomerOtp[]
+  refillRequests  RefillRequest[]
 
   @@index([tenantId])
   @@index([tenantId, phone])
   @@index([loyaltyTierId])
   @@map("customers")
+}
+
+// ---------------------------------------------------------------------------
+// Customer portal — Phase 9
+// ---------------------------------------------------------------------------
+
+/**
+ * One row per OTP code issued for customer-portal login. Deliberately a
+ * hashed, short-lived, single-use code (never the raw code) — same
+ * "never trust a stored secret in plaintext" posture as password/PIN
+ * hashing elsewhere in this app — sent via the existing WhatsApp provider
+ * (Phase 5), not a new delivery channel.
+ */
+model CustomerOtp {
+  id         String    @id @default(cuid())
+  tenantId   String
+  customerId String
+  codeHash   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([customerId, createdAt])
+  @@map("customer_otps")
+}
+
+enum RefillRequestStatus {
+  pending
+  fulfilled
+  dismissed
+}
+
+/**
+ * A customer-initiated "please refill this" flag against a past purchase —
+ * deliberately NOT a sale. It only ever creates this row; a staff member
+ * still rings up the actual refill through the normal POS screen once
+ * they've acted on it, exactly like the phase spec requires.
+ */
+model RefillRequest {
+  id          String              @id @default(cuid())
+  tenantId    String
+  customerId  String
+  invoiceId   String?
+  note        String?
+  status      RefillRequestStatus @default(pending)
+  createdAt   DateTime            @default(now())
+  fulfilledAt DateTime?
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  invoice  SalesInvoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@map("refill_requests")
 }
 
 enum WhatsAppMessageType {
@@ -584,6 +654,7 @@ model SalesInvoice {
   narcoticRegisterEntries NarcoticRegisterEntry[]
   whatsappLogs            WhatsAppLog[]
   insuranceClaim          InsuranceClaim?
+  refillRequests          RefillRequest[]
 
   @@unique([tenantId, invoiceNo])
   @@index([tenantId, invoiceDate])

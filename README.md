@@ -912,6 +912,68 @@ ecosystem integrations beyond what's listed above, and replacing the
 explainable statistical approach (reorder suggestions, refill-cycle
 detection) with an actual ML model.
 
+## Phase 9: Mobile, customer portal & remaining ecosystem features
+
+Flagged from the outset as the most speculative phase in the plan — the
+user confirmed all six scope items before work started, with the customer
+portal built first per that confirmation (highest customer-visible value),
+followed by the owner PWA, rate contracts, cold-chain tracking, customer
+feedback capture, and franchise/dealer management last (most
+architecturally novel).
+
+### Customer-facing portal
+
+A phone+OTP self-service portal for a pharmacy's own customers, entirely
+separate from staff login — no shared session, no shared cookie, no
+NextAuth involvement at all.
+
+- **Auth is a third, independent session system.** `src/lib/customer-auth.ts`
+  mirrors the Super-Admin console's hand-rolled HMAC-signed httpOnly
+  cookie pattern (`src/lib/admin-auth.ts`) rather than forcing NextAuth to
+  serve a second kind of session. The cookie is path-scoped to
+  `/portal/<slug>`, so a customer of two different pharmacies on the
+  platform holds two independent sessions.
+- **Tenant resolution via `Tenant.portalSlug`.** The app has no
+  hostname-based tenant routing (Phase 6's `customDomain` only supports
+  DNS-TXT verification; actual routing is left to the deployment), so the
+  portal is addressed by path: `/portal/<slug>`. Auto-generated from the
+  pharmacy name at signup with numeric-suffix collision handling, unique
+  platform-wide, owner-editable later in Settings > Branding.
+- **OTP delivery reuses the existing WhatsApp provider** — no new SMS
+  channel. Codes are SHA-256 hashed before storage (never stored in
+  plaintext), a phone lookup during OTP request always returns success
+  regardless of whether the number is registered (doesn't leak which
+  numbers are customers), and a 60-second resend cooldown prevents
+  WhatsApp spam from repeated requests.
+- **Pre-login lookups bypass RLS the same way staff login does** — tenant
+  lookup by slug, customer lookup by phone, and OTP verification all run
+  through `basePrisma` with the same transaction-batched
+  `set_config('app.rls_bypass', ...)` pattern already established in
+  `src/auth.ts`'s staff login path, since no tenant is known yet at that
+  point. Every post-login action runs inside `tenantContext.run(...)`
+  instead, scoped to the tenant id from the signed cookie.
+- **Screens**: purchase history, a digital receipt/invoice detail view,
+  loyalty tier + progress-to-next-tier, and a "Request refill" action.
+  The portal carries the tenant's white-labeling (logo, brand color)
+  prominently in the header, since it's the pharmacy's own app to the
+  customer, not a third-party tool.
+- **Refill requests are deliberately not sales.** `RefillRequest` is just
+  a flagged row; a human staff member still rings up the actual refill
+  through the normal POS screen. Staff see pending requests on a new
+  `/refill-requests` screen (linked from a new dashboard card showing the
+  pending count) and mark each fulfilled or dismissed.
+
+Verified live against a real running instance: seeded a customer with a
+phone number on the demo tenant, ran the full portal flow through a
+browser end-to-end — requested an OTP, recovered the code from the
+database (WhatsApp delivery itself reports "not configured" in this
+environment, the same expected caveat as every other WhatsApp send here),
+verified it, viewed purchase history and an invoice detail page, submitted
+a refill request, signed out, signed back in, and viewed the loyalty
+status page. Then logged in as staff and confirmed the request appeared
+on `/refill-requests` linked to the correct receipt, and that the
+dashboard's pending-count card matched.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,

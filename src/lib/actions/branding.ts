@@ -6,6 +6,7 @@ import dns from "node:dns/promises";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/rbac";
+import { slugify } from "@/lib/slug";
 
 export async function getBrandingInfo() {
   const session = await requireRole(["owner"]);
@@ -25,6 +26,7 @@ export async function getBrandingInfo() {
     customDomainVerificationToken: tenant.customDomainVerificationToken,
     customDomainVerifiedAt: tenant.customDomainVerifiedAt,
     whiteLabelPlan: subscription?.plan.whiteLabel ?? false,
+    portalSlug: tenant.portalSlug,
   };
 }
 
@@ -118,6 +120,23 @@ export async function verifyCustomDomain() {
   });
   revalidatePath("/settings");
   return { verified: true };
+}
+
+export async function setPortalSlug(slugInput: string) {
+  const session = await requireRole(["owner"]);
+  const slug = slugify(slugInput);
+  if (slug.length < 3) {
+    throw new Error("Portal URL must be at least 3 characters (letters, numbers, hyphens).");
+  }
+
+  const existing = await prisma.tenant.findUnique({ where: { portalSlug: slug }, select: { id: true } });
+  if (existing && existing.id !== session.user.tenantId) {
+    throw new Error("That portal URL is already taken — try another.");
+  }
+
+  await prisma.tenant.update({ where: { id: session.user.tenantId }, data: { portalSlug: slug } });
+  revalidatePath("/settings");
+  return { portalSlug: slug };
 }
 
 export async function clearCustomDomain() {

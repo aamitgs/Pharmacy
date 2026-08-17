@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, Clock, IndianRupee, PackageX, Receipt } from "lucide-react";
+import { AlertTriangle, Clock, IndianRupee, PackageX, Receipt, RefreshCcw } from "lucide-react";
 
 export default async function DashboardPage() {
   const data = await getDashboardData();
@@ -63,7 +63,7 @@ export default async function DashboardPage() {
         </Alert>
       )}
 
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-3 gap-4 lg:grid-cols-6">
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -170,6 +170,30 @@ export default async function DashboardPage() {
               </div>
               <p className="text-xs text-muted-foreground">
                 {data.backupStatus.lastBackupStatus ?? "no backups yet"}
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/refill-requests">
+          <Card className="transition-colors hover:bg-muted/40">
+            <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Refill requests
+              </CardTitle>
+              <RefreshCcw className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div
+                className={cn(
+                  "text-2xl font-semibold tabular-nums",
+                  data.pendingRefillRequestCount > 0 && "text-warning-foreground"
+                )}
+              >
+                {data.pendingRefillRequestCount}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                pending from the customer portal
               </p>
             </CardContent>
           </Card>

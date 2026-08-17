@@ -31,6 +31,7 @@ import {
   LineChart,
   ShieldCheck,
   FileHeart,
+  RefreshCcw,
 } from "lucide-react";
 
 type NavItem = {
@@ -72,6 +73,12 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/doctors", label: "Doctors", icon: Stethoscope },
   { href: "/invoices", label: "Invoices", icon: Receipt },
+  {
+    href: "/refill-requests",
+    label: "Refill Requests",
+    icon: RefreshCcw,
+    roles: ["owner", "pharmacist", "counter_staff", "ward_pharmacist"],
+  },
   {
     href: "/insurance-claims",
     label: "Insurance Claims",

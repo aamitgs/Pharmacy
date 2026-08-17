@@ -82,6 +82,9 @@ const cases: Case[] = [
   { label: "Indent", aId: () => A.indentId, bId: () => B.indentId, find: (id) => prisma.indent.findUnique({ where: { id } }) },
   { label: "PatientAdmission", aId: () => A.patientAdmissionId, bId: () => B.patientAdmissionId, find: (id) => prisma.patientAdmission.findUnique({ where: { id } }) },
   { label: "IpdDispense", aId: () => A.ipdDispenseId, bId: () => B.ipdDispenseId, find: (id) => prisma.ipdDispense.findUnique({ where: { id } }) },
+  // Phase 9: customer portal
+  { label: "CustomerOtp", aId: () => A.customerOtpId, bId: () => B.customerOtpId, find: (id) => prisma.customerOtp.findUnique({ where: { id } }) },
+  { label: "RefillRequest", aId: () => A.refillRequestId, bId: () => B.refillRequestId, find: (id) => prisma.refillRequest.findUnique({ where: { id } }) },
   // Indirect (no direct tenantId column — scoped via EXISTS into parent)
   { label: "Batch (indirect via Item)", aId: () => A.batchId, bId: () => B.batchId, find: (id) => prisma.batch.findUnique({ where: { id } }) },
   { label: "SalesInvoiceItem (indirect via SalesInvoice)", aId: () => A.invoiceItemId, bId: () => B.invoiceItemId, find: (id) => prisma.salesInvoiceItem.findUnique({ where: { id } }) },

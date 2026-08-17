@@ -5,11 +5,13 @@ import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { basePrisma, prisma, tenantContext } from "@/lib/prisma";
 import { requireRole } from "@/lib/rbac";
+import { slugify } from "@/lib/slug";
 import {
   createRazorpayCustomer,
   createRazorpaySubscription,
   isRazorpayConfigured,
 } from "@/lib/razorpay/client";
+
 
 /** Public — used by the pre-login /signup page, so no session is available.
  * subscription_plans carries no tenantId and has no RLS policy, so this
@@ -64,8 +66,18 @@ export async function signUpTenant(input: SignUpInput) {
     const trialPlan = await tx.subscriptionPlan.findUnique({ where: { code: "trial" } });
     if (!trialPlan) throw new Error("Signup is temporarily unavailable — no trial plan configured.");
 
+    // Portal slugs are unique platform-wide (see Tenant.portalSlug), so a
+    // common pharmacy name ("Apollo Pharmacy") needs a disambiguating
+    // suffix past the first taker — tried in order rather than a random
+    // suffix so the common case (no collision) gets the cleanest URL.
+    const slugBase = slugify(parsed.pharmacyName) || "pharmacy";
+    let portalSlug = slugBase;
+    for (let attempt = 1; await tx.tenant.findUnique({ where: { portalSlug }, select: { id: true } }); attempt++) {
+      portalSlug = attempt < 50 ? `${slugBase}-${attempt + 1}` : `${slugBase}-${Date.now().toString(36)}`;
+    }
+
     const tenant = await tx.tenant.create({
-      data: { pharmacyName: parsed.pharmacyName, tenantType: parsed.tenantType },
+      data: { pharmacyName: parsed.pharmacyName, tenantType: parsed.tenantType, portalSlug },
     });
     await tx.branch.create({
       data: { tenantId: tenant.id, name: "Main Branch", licensedAddress: parsed.licensedAddress },

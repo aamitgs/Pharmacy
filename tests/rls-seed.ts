@@ -13,7 +13,7 @@ export async function seedTenantSlice(suffix: string) {
     await tx.$executeRaw`SELECT set_config('app.rls_bypass', 'true', true)`;
 
     const tenant = await tx.tenant.create({
-      data: { id: `t-${suffix}`, pharmacyName: `Test Pharmacy ${suffix}` },
+      data: { id: `t-${suffix}`, pharmacyName: `Test Pharmacy ${suffix}`, portalSlug: `test-${suffix}` },
     });
 
     const branch = await tx.branch.create({
@@ -353,6 +353,25 @@ export async function seedTenantSlice(suffix: string) {
       },
     });
 
+    // Phase 9: customer portal fixtures.
+    const customerOtp = await tx.customerOtp.create({
+      data: {
+        id: `otp-${suffix}`,
+        tenantId: tenant.id,
+        customerId: customer.id,
+        codeHash: "hash",
+        expiresAt: new Date(Date.now() + 600_000),
+      },
+    });
+    const refillRequest = await tx.refillRequest.create({
+      data: {
+        id: `refillreq-${suffix}`,
+        tenantId: tenant.id,
+        customerId: customer.id,
+        invoiceId: invoice.id,
+      },
+    });
+
     return {
       tenantId: tenant.id,
       branchId: branch.id,
@@ -396,6 +415,8 @@ export async function seedTenantSlice(suffix: string) {
       indentItemId: indentItem.id,
       patientAdmissionId: patientAdmission.id,
       ipdDispenseId: ipdDispense.id,
+      customerOtpId: customerOtp.id,
+      refillRequestId: refillRequest.id,
     };
   });
 }

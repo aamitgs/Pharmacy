@@ -5,6 +5,7 @@ import { requireSession } from "@/lib/rbac";
 import { getBackupStatus } from "@/lib/actions/backup";
 import { getAlerts } from "@/lib/actions/alerts";
 import { getBranchFilter } from "@/lib/branch-scope";
+import { countPendingRefillRequests } from "@/lib/actions/refill-requests";
 
 export async function getDashboardData() {
   const session = await requireSession();
@@ -15,7 +16,7 @@ export async function getDashboardData() {
 
   const branchFilter = await getBranchFilter(tenantId, session.user.role);
 
-  const [salesToday, tenant, backupStatus, alerts, supplierOutstanding, itemCount, invoiceCount] = await Promise.all([
+  const [salesToday, tenant, backupStatus, alerts, supplierOutstanding, itemCount, invoiceCount, pendingRefillRequestCount] = await Promise.all([
     prisma.salesInvoice.aggregate({
       where: { tenantId, status: "completed", invoiceDate: { gte: startOfDay }, ...branchFilter },
       _sum: { total: true },
@@ -27,6 +28,7 @@ export async function getDashboardData() {
     prisma.supplierLedgerEntry.aggregate({ where: { tenantId }, _sum: { amount: true } }),
     prisma.item.count({ where: { tenantId } }),
     prisma.salesInvoice.count({ where: { tenantId } }),
+    countPendingRefillRequests(tenantId),
   ]);
 
   return {
@@ -40,5 +42,6 @@ export async function getDashboardData() {
     licenseExpiryCount: alerts.licenseExpiry.length,
     licenseExpirySoonest: alerts.licenseExpiry[0] ?? null,
     onboarding: { hasItems: itemCount > 0, hasSale: invoiceCount > 0 },
+    pendingRefillRequestCount,
   };
 }

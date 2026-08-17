@@ -18,6 +18,7 @@ async function main() {
       id: "demo-tenant",
       pharmacyName: "Demo Pharmacy",
       tenantType: "retail",
+      portalSlug: "demo-tenant",
       invoiceFooterText: "Thank you for visiting. Medicines once sold are not returnable.",
       staffDiscountCapPercent: 10,
       managerPinHash: await bcrypt.hash("1234", 10),
