@@ -1038,6 +1038,12 @@ model User {
   passwordHash String
   totpSecret   String?
   totpEnabled  Boolean  @default(false)
+  // Per-user UI language (Phase 10.1) — deliberately independent of the
+  // tenant's own settings, since staff on the same counter may each want
+  // a different language. "en" | "hi" today; adding a language means
+  // adding a messages/<locale>.json file and this column accepting the
+  // new value, not touching component code.
+  locale       String   @default("en")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

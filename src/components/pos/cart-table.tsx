@@ -3,10 +3,13 @@
 import { useEffect, useRef } from "react";
 import { format } from "date-fns";
 import { X } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/format";
+import type { AppLocale } from "@/i18n/locales";
 import type { CartLine } from "@/store/cart-store";
 import type { SchemeApplication } from "@/lib/scheme-engine";
 import type { PosItem } from "./types";
@@ -36,6 +39,8 @@ export function CartTable({
   schemeByLineId: Map<string, SchemeApplication>;
   contractRateByLineId: Map<string, number>;
 }) {
+  const t = useTranslations("pos.cart");
+  const locale = useLocale() as AppLocale;
   const qtyRefs = useRef<Map<string, HTMLInputElement>>(new Map());
 
   useEffect(() => {
@@ -52,7 +57,7 @@ export function CartTable({
   if (lines.length === 0) {
     return (
       <div className="flex h-40 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
-        Search for an item above to start a sale.
+        {t("empty")}
       </div>
     );
   }
@@ -62,13 +67,13 @@ export function CartTable({
       <table className="w-full text-sm">
         <thead className="border-b bg-muted/40 text-xs text-muted-foreground">
           <tr>
-            <th className="px-3 py-2 text-left font-medium">Item</th>
-            <th className="px-3 py-2 text-left font-medium">Batch / Expiry</th>
-            <th className="w-20 px-3 py-2 text-right font-medium">Qty</th>
-            <th className="w-24 px-3 py-2 text-right font-medium">Rate</th>
-            <th className="w-24 px-3 py-2 text-right font-medium">Disc %</th>
-            <th className="w-20 px-3 py-2 text-right font-medium">Tax %</th>
-            <th className="w-28 px-3 py-2 text-right font-medium">Total</th>
+            <th className="px-3 py-2 text-left font-medium">{t("item")}</th>
+            <th className="px-3 py-2 text-left font-medium">{t("batchExpiry")}</th>
+            <th className="w-20 px-3 py-2 text-right font-medium">{t("qty")}</th>
+            <th className="w-24 px-3 py-2 text-right font-medium">{t("rate")}</th>
+            <th className="w-24 px-3 py-2 text-right font-medium">{t("discountPercent")}</th>
+            <th className="w-20 px-3 py-2 text-right font-medium">{t("taxPercent")}</th>
+            <th className="w-28 px-3 py-2 text-right font-medium">{t("total")}</th>
             <th className="w-10 px-2 py-2" />
           </tr>
         </thead>
@@ -92,7 +97,7 @@ export function CartTable({
                   )}
                   {line.scheduleClass !== "none" && (
                     <Badge variant="outline" className="mt-0.5 text-[10px]">
-                      Schedule {line.scheduleClass}
+                      {t("schedule", { class: line.scheduleClass })}
                     </Badge>
                   )}
                   {schemeByLineId.get(line.lineId) && (
@@ -102,7 +107,7 @@ export function CartTable({
                   )}
                   {contractRate !== undefined && (
                     <Badge variant="outline" className="mt-0.5 block w-fit text-[10px]">
-                      Contract rate applied
+                      {t("contractRateApplied")}
                     </Badge>
                   )}
                 </td>
@@ -147,7 +152,7 @@ export function CartTable({
                   />
                 </td>
                 <td className="px-3 py-2 text-right align-top tabular-nums">
-                  ₹{effectiveRate.toFixed(2)}
+                  {formatCurrency(effectiveRate, locale)}
                 </td>
                 <td className="px-3 py-2 align-top">
                   <Input
@@ -163,7 +168,7 @@ export function CartTable({
                   {line.taxRate}%
                 </td>
                 <td className="px-3 py-2 text-right align-top font-medium tabular-nums">
-                  ₹{lineTotal.toFixed(2)}
+                  {formatCurrency(lineTotal, locale)}
                 </td>
                 <td className="px-2 py-2 align-top">
                   <Button
@@ -171,7 +176,7 @@ export function CartTable({
                     variant="ghost"
                     size="icon-sm"
                     onClick={() => onRemove(line.lineId)}
-                    aria-label={`Remove ${line.itemName}`}
+                    aria-label={t("remove", { name: line.itemName })}
                   >
                     <X className="h-3.5 w-3.5" />
                   </Button>

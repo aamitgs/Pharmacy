@@ -1,21 +1,28 @@
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
+import { getTranslations, getLocale } from "next-intl/server";
 import { getDashboardData } from "@/lib/actions/dashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/format";
+import type { AppLocale } from "@/i18n/locales";
 import { AlertTriangle, Clock, IndianRupee, PackageX, Receipt, RefreshCcw } from "lucide-react";
 
 export default async function DashboardPage() {
-  const data = await getDashboardData();
+  const [data, t, locale] = await Promise.all([
+    getDashboardData(),
+    getTranslations("dashboard"),
+    getLocale() as Promise<AppLocale>,
+  ]);
   const showOnboarding = !data.onboarding.hasItems || !data.onboarding.hasSale;
 
   return (
     <div className="space-y-4 p-6">
       <div>
         <h1 className="text-lg font-semibold">{data.pharmacyName}</h1>
-        <p className="text-sm text-muted-foreground">Today at a glance</p>
+        <p className="text-sm text-muted-foreground">{t("todayAtAGlance")}</p>
       </div>
 
       {showOnboarding && (
@@ -25,13 +32,13 @@ export default async function DashboardPage() {
       {data.backupStatus.isStale && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Backup overdue</AlertTitle>
+          <AlertTitle>{t("backupOverdue")}</AlertTitle>
           <AlertDescription>
             {data.backupStatus.lastBackupAt
-              ? `Last backup was ${formatDistanceToNow(data.backupStatus.lastBackupAt)} ago.`
-              : "No backup has been taken yet."}{" "}
+              ? t("lastBackupWasAgo", { time: formatDistanceToNow(data.backupStatus.lastBackupAt) })
+              : t("noBackupYet")}{" "}
             <Link href="/settings" className="underline underline-offset-2">
-              Run one now
+              {t("runOneNow")}
             </Link>
             .
           </AlertDescription>
@@ -45,18 +52,16 @@ export default async function DashboardPage() {
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>
             {data.licenseExpiryCount === 1
-              ? "License renewal due"
-              : `${data.licenseExpiryCount} license renewals due`}
+              ? t("licenseRenewalDueOne")
+              : t("licenseRenewalDueMany", { count: data.licenseExpiryCount })}
           </AlertTitle>
           <AlertDescription>
             {data.licenseExpirySoonest.label} ({data.licenseExpirySoonest.branchName}){" "}
             {data.licenseExpirySoonest.severity === "expired"
-              ? "has expired."
-              : `expires in ${data.licenseExpirySoonest.daysRemaining} day${
-                  data.licenseExpirySoonest.daysRemaining === 1 ? "" : "s"
-                }.`}{" "}
+              ? t("licenseExpired")
+              : t("licenseExpiresIn", { days: data.licenseExpirySoonest.daysRemaining })}{" "}
             <Link href="/alerts" className="underline underline-offset-2">
-              Review
+              {t("review")}
             </Link>
             .
           </AlertDescription>
@@ -67,16 +72,16 @@ export default async function DashboardPage() {
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Today&apos;s sales
+              {t("todaysSales")}
             </CardTitle>
             <Receipt className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold tabular-nums">
-              ₹{data.todaySalesTotal.toFixed(2)}
+              {formatCurrency(data.todaySalesTotal, locale)}
             </div>
             <p className="text-xs text-muted-foreground">
-              {data.todaySalesCount} invoice{data.todaySalesCount === 1 ? "" : "s"}
+              {t("invoiceCount", { count: data.todaySalesCount })}
             </p>
           </CardContent>
         </Card>
@@ -85,7 +90,7 @@ export default async function DashboardPage() {
           <Card className="transition-colors hover:bg-muted/40">
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Low stock
+                {t("lowStock")}
               </CardTitle>
               <PackageX className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
@@ -98,7 +103,7 @@ export default async function DashboardPage() {
               >
                 {data.lowStockCount}
               </div>
-              <p className="text-xs text-muted-foreground">item{data.lowStockCount === 1 ? "" : "s"} below reorder level</p>
+              <p className="text-xs text-muted-foreground">{t("belowReorderLevel", { count: data.lowStockCount })}</p>
             </CardContent>
           </Card>
         </Link>
@@ -107,7 +112,7 @@ export default async function DashboardPage() {
           <Card className="transition-colors hover:bg-muted/40">
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Near expiry
+                {t("nearExpiry")}
               </CardTitle>
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
@@ -121,7 +126,7 @@ export default async function DashboardPage() {
                 {data.nearExpiryCount}
               </div>
               <p className="text-xs text-muted-foreground">
-                batch{data.nearExpiryCount === 1 ? "" : "es"} expiring soon
+                {t("batchesExpiringSoon", { count: data.nearExpiryCount })}
               </p>
             </CardContent>
           </Card>
@@ -131,7 +136,7 @@ export default async function DashboardPage() {
           <Card className="transition-colors hover:bg-muted/40">
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Supplier outstanding
+                {t("supplierOutstanding")}
               </CardTitle>
               <IndianRupee className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
@@ -142,9 +147,9 @@ export default async function DashboardPage() {
                   data.supplierOutstandingTotal > 0 && "text-destructive"
                 )}
               >
-                ₹{data.supplierOutstandingTotal.toFixed(2)}
+                {formatCurrency(data.supplierOutstandingTotal, locale)}
               </div>
-              <p className="text-xs text-muted-foreground">owed across all suppliers</p>
+              <p className="text-xs text-muted-foreground">{t("owedAcrossSuppliers")}</p>
             </CardContent>
           </Card>
         </Link>
@@ -153,7 +158,7 @@ export default async function DashboardPage() {
           <Card className="transition-colors hover:bg-muted/40">
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Last backup
+                {t("lastBackup")}
               </CardTitle>
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
@@ -166,10 +171,10 @@ export default async function DashboardPage() {
               >
                 {data.backupStatus.lastBackupAt
                   ? formatDistanceToNow(data.backupStatus.lastBackupAt, { addSuffix: true })
-                  : "Never"}
+                  : t("never")}
               </div>
               <p className="text-xs text-muted-foreground">
-                {data.backupStatus.lastBackupStatus ?? "no backups yet"}
+                {data.backupStatus.lastBackupStatus ?? t("noBackupsYet")}
               </p>
             </CardContent>
           </Card>
@@ -179,7 +184,7 @@ export default async function DashboardPage() {
           <Card className="transition-colors hover:bg-muted/40">
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Refill requests
+                {t("refillRequests")}
               </CardTitle>
               <RefreshCcw className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
@@ -193,7 +198,7 @@ export default async function DashboardPage() {
                 {data.pendingRefillRequestCount}
               </div>
               <p className="text-xs text-muted-foreground">
-                pending from the customer portal
+                {t("pendingFromPortal")}
               </p>
             </CardContent>
           </Card>

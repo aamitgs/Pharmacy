@@ -30,6 +30,7 @@
     "lucide-react": "^1.31.0",
     "next": "^16.3.0",
     "next-auth": "^5.0.0-beta.32",
+    "next-intl": "^4.13.7",
     "otpauth": "^9.5.1",
     "papaparse": "^5.5.4",
     "qrcode": "^1.5.4",

@@ -1,5 +1,6 @@
 "use client";
 
+import { useLocale, useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -11,18 +12,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/format";
+import type { AppLocale } from "@/i18n/locales";
 import type { BillingResult } from "@/lib/billing";
 import type { AppliedCoupon } from "@/store/cart-store";
 import type { PosCustomer } from "./types";
 import type { PaymentMode } from "@/generated/prisma/client";
 import { Loader2, Tag, X } from "lucide-react";
 
-const PAYMENT_MODES: { value: PaymentMode; label: string }[] = [
-  { value: "cash", label: "Cash" },
-  { value: "upi", label: "UPI" },
-  { value: "card", label: "Card" },
-  { value: "credit", label: "Credit" },
-  { value: "insurance", label: "Insurance" },
+const PAYMENT_MODES: { value: PaymentMode; labelKey: string }[] = [
+  { value: "cash", labelKey: "paymentCash" },
+  { value: "upi", labelKey: "paymentUpi" },
+  { value: "card", labelKey: "paymentCard" },
+  { value: "credit", labelKey: "paymentCredit" },
+  { value: "insurance", labelKey: "paymentInsurance" },
 ];
 
 export function BottomBar({
@@ -80,6 +83,8 @@ export function BottomBar({
   coPayAmount: string;
   onCoPayAmountChange: (v: string) => void;
 }) {
+  const t = useTranslations("pos.bottomBar");
+  const locale = useLocale() as AppLocale;
   const selectedCustomer = customers.find((c) => c.id === customerId);
   const creditEligible = !!selectedCustomer && selectedCustomer.creditLimit !== null;
   const loyaltyDiscount = billing.billDiscounts.find((d) => d.type === "loyalty");
@@ -90,16 +95,16 @@ export function BottomBar({
       <div className="grid grid-cols-[1fr_auto] gap-6 p-4">
         <div className="grid grid-cols-4 gap-4">
           <div className="space-y-1">
-            <Label className="text-xs">Customer (optional)</Label>
+            <Label className="text-xs">{t("customerOptional")}</Label>
             <Select
               value={customerId ?? "__none"}
               onValueChange={(v) => onCustomerChange(v === "__none" ? null : v)}
             >
               <SelectTrigger className="h-8">
-                <SelectValue placeholder="Walk-in" />
+                <SelectValue placeholder={t("walkIn")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none">Walk-in</SelectItem>
+                <SelectItem value="__none">{t("walkIn")}</SelectItem>
                 {customers.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.name} {c.phone ? `· ${c.phone}` : ""}
@@ -109,13 +114,16 @@ export function BottomBar({
             </Select>
             {selectedCustomer?.loyaltyTierName && (
               <p className="text-[11px] text-success">
-                {selectedCustomer.loyaltyTierName} tier — {selectedCustomer.loyaltyDiscountPercent}% loyalty discount
+                {t("loyaltyDiscountLine", {
+                  tier: selectedCustomer.loyaltyTierName,
+                  percent: selectedCustomer.loyaltyDiscountPercent,
+                })}
               </p>
             )}
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">Bill discount</Label>
+            <Label className="text-xs">{t("billDiscount")}</Label>
             <div className="flex gap-1">
               <Input
                 type="number"
@@ -140,7 +148,7 @@ export function BottomBar({
           </div>
 
           <div className="col-span-2 space-y-1">
-            <Label className="text-xs">Payment mode</Label>
+            <Label className="text-xs">{t("paymentMode")}</Label>
             <div className="flex gap-1">
               {PAYMENT_MODES.map((m) => {
                 const disabled = m.value === "credit" && !creditEligible;
@@ -152,9 +160,9 @@ export function BottomBar({
                     variant={paymentMode === m.value ? "default" : "outline"}
                     disabled={disabled}
                     onClick={() => onPaymentModeChange(m.value)}
-                    title={disabled ? "Select a customer with a credit account first" : undefined}
+                    title={disabled ? t("creditRequiresCustomer") : undefined}
                   >
-                    {m.label}
+                    {t(m.labelKey)}
                   </Button>
                 );
               })}
@@ -164,17 +172,17 @@ export function BottomBar({
           {paymentMode === "insurance" && (
             <div className="col-span-4 grid grid-cols-3 gap-2 rounded-md border bg-muted/20 p-2">
               <div className="space-y-1">
-                <Label className="text-xs">Insurance provider</Label>
+                <Label className="text-xs">{t("insuranceProvider")}</Label>
                 <Select
                   value={insuranceProviderId ?? "__none"}
                   onValueChange={(v) => onInsuranceProviderChange(v === "__none" ? null : v)}
                 >
                   <SelectTrigger className="h-8">
-                    <SelectValue placeholder="Select provider" />
+                    <SelectValue placeholder={t("selectProvider")} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none" disabled>
-                      Select provider
+                      {t("selectProvider")}
                     </SelectItem>
                     {insuranceProviders.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
@@ -186,7 +194,7 @@ export function BottomBar({
               </div>
               <div className="space-y-1">
                 <Label htmlFor="claimNumber" className="text-xs">
-                  Claim number (optional)
+                  {t("claimNumberOptional")}
                 </Label>
                 <Input
                   id="claimNumber"
@@ -197,7 +205,7 @@ export function BottomBar({
               </div>
               <div className="space-y-1">
                 <Label htmlFor="coPayAmount" className="text-xs">
-                  Co-pay collected now (₹)
+                  {t("coPayCollectedNow")}
                 </Label>
                 <Input
                   id="coPayAmount"
@@ -206,20 +214,20 @@ export function BottomBar({
                   className="h-8"
                   value={coPayAmount}
                   onChange={(e) => onCoPayAmountChange(e.target.value)}
-                  placeholder="0 — fully cashless"
+                  placeholder={t("coPayPlaceholder")}
                 />
               </div>
             </div>
           )}
 
           <div className="col-span-4 space-y-1">
-            <Label className="text-xs">Coupon code</Label>
+            <Label className="text-xs">{t("couponCode")}</Label>
             {appliedCoupon ? (
               <div className="flex h-8 items-center justify-between rounded-md border bg-success/10 px-2 text-xs">
                 <span className="flex items-center gap-1 text-success">
-                  <Tag className="h-3 w-3" /> {appliedCoupon.code} applied
+                  <Tag className="h-3 w-3" /> {t("couponApplied", { code: appliedCoupon.code })}
                 </span>
-                <button type="button" onClick={onRemoveCoupon} aria-label="Remove coupon">
+                <button type="button" onClick={onRemoveCoupon} aria-label={t("removeCoupon")}>
                   <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
                 </button>
               </div>
@@ -227,7 +235,7 @@ export function BottomBar({
               <div className="flex gap-1">
                 <Input
                   className="h-8 uppercase"
-                  placeholder="Enter code"
+                  placeholder={t("enterCode")}
                   value={couponInput}
                   onChange={(e) => onCouponInputChange(e.target.value)}
                   onKeyDown={(e) => {
@@ -238,7 +246,7 @@ export function BottomBar({
                   }}
                 />
                 <Button type="button" size="sm" className="h-8" onClick={onApplyCoupon} disabled={couponChecking}>
-                  Apply
+                  {t("apply")}
                 </Button>
               </div>
             )}
@@ -249,33 +257,33 @@ export function BottomBar({
         <div className="flex items-center gap-4">
           <div className="text-right text-xs text-muted-foreground">
             <div>
-              Subtotal <span className="tabular-nums">₹{billing.subtotal.toFixed(2)}</span>
+              {t("subtotal")} <span className="tabular-nums">{formatCurrency(billing.subtotal, locale)}</span>
             </div>
             <div>
-              Discount{" "}
+              {t("discount")}{" "}
               <span className="tabular-nums text-success">
-                −₹{billing.discountAmount.toFixed(2)}
+                −{formatCurrency(billing.discountAmount, locale)}
               </span>
             </div>
             {loyaltyDiscount && loyaltyDiscount.amount > 0 && (
               <div>
-                &nbsp;&nbsp;· Loyalty{" "}
-                <span className="tabular-nums text-success">−₹{loyaltyDiscount.amount.toFixed(2)}</span>
+                &nbsp;&nbsp;· {t("loyalty")}{" "}
+                <span className="tabular-nums text-success">−{formatCurrency(loyaltyDiscount.amount, locale)}</span>
               </div>
             )}
             {couponDiscount && couponDiscount.amount > 0 && (
               <div>
-                &nbsp;&nbsp;· Coupon{" "}
-                <span className="tabular-nums text-success">−₹{couponDiscount.amount.toFixed(2)}</span>
+                &nbsp;&nbsp;· {t("coupon")}{" "}
+                <span className="tabular-nums text-success">−{formatCurrency(couponDiscount.amount, locale)}</span>
               </div>
             )}
             <div>
-              Tax (CGST+SGST) <span className="tabular-nums">₹{billing.taxAmount.toFixed(2)}</span>
+              {t("taxCgstSgst")} <span className="tabular-nums">{formatCurrency(billing.taxAmount, locale)}</span>
             </div>
           </div>
           <div className="text-right">
-            <div className="text-xs text-muted-foreground">Total</div>
-            <div className="text-2xl font-semibold tabular-nums">₹{billing.total.toFixed(2)}</div>
+            <div className="text-xs text-muted-foreground">{t("total")}</div>
+            <div className="text-2xl font-semibold tabular-nums">{formatCurrency(billing.total, locale)}</div>
           </div>
           <Button
             size="lg"
@@ -285,7 +293,7 @@ export function BottomBar({
             title={blockedReason ?? undefined}
           >
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Complete sale
+            {t("completeSale")}
             <kbd className="ml-2 hidden rounded bg-primary-foreground/20 px-1.5 py-0.5 text-[10px] sm:inline">
               F9
             </kbd>

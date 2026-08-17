@@ -1237,6 +1237,89 @@ customer feedback capture, and franchise/dealer management. Full-suite
 verification (typecheck, lint, `vitest run`, `next build`) passes across
 the combined phase.
 
+## Phase 10: Localization, safety alerts & onboarding polish
+
+Three items the original product planning flagged but never scheduled —
+regional language UI, drug interaction/duplicate-therapy safety alerts, and
+a staff certification flow — plus proactive compliance nudges and
+accessibility polish. Built in that order per the phase spec: localization
+first since it's the most structurally invasive (touches every screen), so
+it's better done before other UI changes pile up untranslated strings on
+top of it.
+
+### Regional language UI
+
+[next-intl](https://next-intl.dev), set up **without URL-based locale
+routing** — deliberately not the `app/[lang]/...` path-segment pattern
+Next's own i18n guide leads with, since that pattern is aimed at
+public/SEO-facing multi-region sites. This app is an authenticated
+internal counter tool where "language" is a *per-user* preference, not a
+per-URL one, so every route stays exactly where it already is and only the
+rendered strings change.
+
+- **`User.locale`** (`"en" | "hi"`, default `"en"`) is the source of
+  truth — durable, per-user, and independent of the tenant's own settings,
+  so two staff on the same counter can each pick their own. A
+  `NEXT_LOCALE` cookie is a secondary fallback for pages with no signed-in
+  tenant session yet (login, signup).
+- **`src/i18n/request.ts`** (next-intl's `getRequestConfig`) resolves the
+  active locale each request: signed-in user → their `User.locale` (a
+  plain `prisma.user.findUnique`, the same "ambient, `auth()`-backed"
+  tenant resolution every other RSC read in this app already relies on —
+  no `tenantContext` override involved, so none of the AsyncLocalStorage
+  unreliability from the Phase 9 franchise rollup lesson applies here) →
+  else the cookie → else `"en"`.
+- **`src/i18n/locales.ts`** holds the plain `SUPPORTED_LOCALES`/`AppLocale`
+  constants split into their own framework-agnostic file specifically so
+  Client Components can import them without pulling in `request.ts`'s
+  Prisma/`auth()` dependency chain — the first attempt re-exported them
+  from `request.ts` itself, which broke `next build` ("Module not found:
+  net/tls") the moment a Client Component imported the type, since Next
+  bundles a Client Component's whole import graph for the browser.
+- **`src/lib/format.ts`** — `formatCurrency`/`formatNumber`/`formatDate`
+  wrapping `Intl.NumberFormat`/`Intl.DateTimeFormat` with `en-IN`/`hi-IN`
+  and `numberingSystem: "latn"` pinned explicitly. Both locales already
+  render Indian digit grouping (`₹12,34,567.50`, lakh/crore, not
+  `12,345,67.50`) — `numberingSystem: "latn"` is pinned rather than left
+  to `hi-IN`'s ICU default because some ICU builds render Devanagari
+  digits for Hindi by default, which would be wrong for this app: Indian
+  retail receipts and price tags use Arabic numerals even in Hindi-language
+  UI — only the month name actually changes (`17 Aug 2026` → `17 अग॰
+  2026`).
+- **Per-user switcher**: a language dropdown in the app shell's header
+  (next to the branch switcher, so it's one click from anywhere) and a
+  matching "Language" tab in Settings, both backed by the same
+  `setUserLocale` server action. The switcher reloads with
+  `window.location.reload()`, not `router.refresh()` — confirmed
+  empirically that a soft refresh doesn't reliably re-render
+  `NextIntlClientProvider` in the root layout (a hard reload always picks
+  up the new `User.locale` value; `router.refresh()` sometimes silently
+  didn't), the same reasoning already documented on the login form's own
+  post-sign-in redirect.
+- **Coverage**: full infrastructure (next-intl, per-user preference,
+  locale-aware formatting) is wired app-wide, and translations are shipped
+  for the screens the phase's acceptance criteria actually exercise — the
+  app shell navigation, login, dashboard, the POS billing screen (search,
+  cart, bottom bar), the printed receipt/invoice (both on-screen and at
+  print time), the Alerts screen header, and Settings. The remaining
+  screens across this ~190-component app are unmigrated and still render
+  in English regardless of the selected locale; adding one is a matter of
+  adding keys to `messages/en.json` and `messages/hi.json` and a
+  `useTranslations`/`getTranslations` call in that screen, not touching
+  next-intl's setup.
+- Hindi translations in `messages/hi.json` were authored and reviewed for
+  accuracy, not machine-generated and shipped blind, per the phase's own
+  explicit out-of-scope note.
+
+Verified live against a real running instance: logged in as the demo
+tenant's owner (real TOTP MFA), switched to हिन्दी via the header
+switcher, confirmed the nav/dashboard/POS billing screen re-rendered in
+Hindi with `₹` amounts in Indian digit grouping (`₹96.32`, `₹1,800.00`),
+then opened a real invoice's printed receipt and confirmed it rendered
+fully in Hindi (`सबटोटल`, `कुल`, `डीएल (रिटेल)`, batch/HSN/GST lines) with
+the same Indian-formatted currency — the specific acceptance-criteria
+check ("including on a printed receipt").
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,

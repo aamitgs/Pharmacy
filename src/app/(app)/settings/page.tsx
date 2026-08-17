@@ -25,6 +25,7 @@ import { WardsPanel } from "@/components/settings/wards-panel";
 import { StaffPanel } from "@/components/settings/staff-panel";
 import { RefillRemindersPanel } from "@/components/settings/refill-reminders-panel";
 import { NotificationsPanel } from "@/components/settings/notifications-panel";
+import { LanguagePanel } from "@/components/settings/language-panel";
 import { FeedbackPanel } from "@/components/settings/feedback-panel";
 import { getFeedbackSettings } from "@/lib/actions/customer-feedback";
 import { Separator } from "@/components/ui/separator";
@@ -67,6 +68,7 @@ export default async function SettingsPage() {
           <TabsTrigger value="backup">Backup</TabsTrigger>
           <TabsTrigger value="data">Import / Export</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
+          <TabsTrigger value="language">Language</TabsTrigger>
           {canCompliance && <TabsTrigger value="compliance">Compliance</TabsTrigger>}
           {canBilling && <TabsTrigger value="branding">Branding</TabsTrigger>}
           {canBilling && <TabsTrigger value="billing">Billing</TabsTrigger>}
@@ -99,6 +101,9 @@ export default async function SettingsPage() {
         </TabsContent>
         <TabsContent value="security" className="pt-4">
           <SecurityPanel totpEnabled={user.totpEnabled} />
+        </TabsContent>
+        <TabsContent value="language" className="pt-4">
+          <LanguagePanel />
         </TabsContent>
         {canCompliance && licenseWindow && (
           <TabsContent value="compliance" className="pt-4">

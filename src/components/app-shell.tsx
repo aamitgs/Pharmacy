@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useTranslations } from "next-intl";
 import type { UserRole } from "@/generated/prisma/client";
 import { cn } from "@/lib/utils";
 import { SignOutButton } from "@/components/sign-out-button";
 import { BranchSwitcher } from "@/components/branch-switcher";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { ServiceWorkerRegister } from "@/components/pwa/sw-register";
 import {
   LayoutDashboard,
@@ -41,7 +43,7 @@ import {
 
 type NavItem = {
   href: string;
-  label: string;
+  labelKey: string;
   icon: React.ComponentType<{ className?: string }>;
   roles?: UserRole[];
   // Phase 7 (Hospital Mode): only rendered when the tenant's tenantType is
@@ -56,145 +58,148 @@ type NavItem = {
 // (src/lib/rbac.ts). ward_pharmacist is unaffected (treated as pharmacist).
 const RETAIL_ONLY_ROLES: UserRole[] = ["owner", "pharmacist", "counter_staff", "ward_pharmacist"];
 
+// labelKey resolves against the "nav" namespace in messages/<locale>.json
+// (Phase 10.1) — add a language by adding a translation file, not by
+// touching this list.
 const NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/analytics", label: "Analytics", icon: LineChart, roles: ["owner"] },
-  { href: "/franchise", label: "Franchise", icon: Handshake, roles: ["owner"] },
-  { href: "/alerts", label: "Alerts", icon: TriangleAlert },
-  { href: "/cold-chain-log", label: "Cold-Chain Log", icon: Thermometer, roles: RETAIL_ONLY_ROLES },
-  { href: "/pos", label: "Billing", icon: ScanBarcode, roles: RETAIL_ONLY_ROLES },
-  { href: "/items", label: "Items & Batches", icon: Package },
-  { href: "/suppliers", label: "Suppliers", icon: Truck, roles: RETAIL_ONLY_ROLES },
-  { href: "/purchase-orders", label: "Purchase Orders", icon: ClipboardList, roles: RETAIL_ONLY_ROLES },
-  { href: "/grn", label: "GRN", icon: PackageCheck, roles: RETAIL_ONLY_ROLES },
-  { href: "/purchase-returns", label: "Purchase Returns", icon: Undo2, roles: RETAIL_ONLY_ROLES },
-  { href: "/transfers", label: "Stock Transfers", icon: ArrowLeftRight, roles: RETAIL_ONLY_ROLES },
-  { href: "/indents", label: "Indents", icon: ClipboardPlus, hospitalOnly: true },
-  { href: "/admissions", label: "Patient Admissions", icon: BedDouble, hospitalOnly: true },
+  { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
+  { href: "/analytics", labelKey: "analytics", icon: LineChart, roles: ["owner"] },
+  { href: "/franchise", labelKey: "franchise", icon: Handshake, roles: ["owner"] },
+  { href: "/alerts", labelKey: "alerts", icon: TriangleAlert },
+  { href: "/cold-chain-log", labelKey: "coldChainLog", icon: Thermometer, roles: RETAIL_ONLY_ROLES },
+  { href: "/pos", labelKey: "billing", icon: ScanBarcode, roles: RETAIL_ONLY_ROLES },
+  { href: "/items", labelKey: "items", icon: Package },
+  { href: "/suppliers", labelKey: "suppliers", icon: Truck, roles: RETAIL_ONLY_ROLES },
+  { href: "/purchase-orders", labelKey: "purchaseOrders", icon: ClipboardList, roles: RETAIL_ONLY_ROLES },
+  { href: "/grn", labelKey: "grn", icon: PackageCheck, roles: RETAIL_ONLY_ROLES },
+  { href: "/purchase-returns", labelKey: "purchaseReturns", icon: Undo2, roles: RETAIL_ONLY_ROLES },
+  { href: "/transfers", labelKey: "stockTransfers", icon: ArrowLeftRight, roles: RETAIL_ONLY_ROLES },
+  { href: "/indents", labelKey: "indents", icon: ClipboardPlus, hospitalOnly: true },
+  { href: "/admissions", labelKey: "patientAdmissions", icon: BedDouble, hospitalOnly: true },
   {
     href: "/branches",
-    label: "Branches",
+    labelKey: "branches",
     icon: Building2,
     roles: ["owner", "pharmacist"],
   },
-  { href: "/customers", label: "Customers", icon: Users },
-  { href: "/doctors", label: "Doctors", icon: Stethoscope },
-  { href: "/invoices", label: "Invoices", icon: Receipt },
+  { href: "/customers", labelKey: "customers", icon: Users },
+  { href: "/doctors", labelKey: "doctors", icon: Stethoscope },
+  { href: "/invoices", labelKey: "invoices", icon: Receipt },
   {
     href: "/refill-requests",
-    label: "Refill Requests",
+    labelKey: "refillRequests",
     icon: RefreshCcw,
     roles: ["owner", "pharmacist", "counter_staff", "ward_pharmacist"],
   },
   {
     href: "/insurance-claims",
-    label: "Insurance Claims",
+    labelKey: "insuranceClaims",
     icon: FileHeart,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/insurance-providers",
-    label: "Insurance Providers",
+    labelKey: "insuranceProviders",
     icon: ShieldCheck,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/schemes",
-    label: "Schemes",
+    labelKey: "schemes",
     icon: Percent,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/loyalty-tiers",
-    label: "Loyalty Tiers",
+    labelKey: "loyaltyTiers",
     icon: Award,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/coupons",
-    label: "Coupons",
+    labelKey: "coupons",
     icon: Ticket,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/rate-contracts",
-    label: "Rate Contracts",
+    labelKey: "rateContracts",
     icon: FileSignature,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/reports/sales-register",
-    label: "Sales Register",
+    labelKey: "salesRegister",
     icon: FileSpreadsheet,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/reports/purchase-register",
-    label: "Purchase Register",
+    labelKey: "purchaseRegister",
     icon: FileSpreadsheet,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/reports/stock-ledger",
-    label: "Stock Ledger",
+    labelKey: "stockLedger",
     icon: FileSpreadsheet,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/reports/margin",
-    label: "Margin Report",
+    labelKey: "marginReport",
     icon: FileSpreadsheet,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/reports/discounts",
-    label: "Discount Report",
+    labelKey: "discountReport",
     icon: FileSpreadsheet,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/reports/movers",
-    label: "Fast / Slow Movers",
+    labelKey: "fastSlowMovers",
     icon: FileSpreadsheet,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/reports/scheme-benefits",
-    label: "Scheme Benefits",
+    labelKey: "schemeBenefits",
     icon: FileSpreadsheet,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/reports/feedback",
-    label: "Customer Feedback",
+    labelKey: "customerFeedback",
     icon: Star,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/reports/tally-export",
-    label: "Tally Export",
+    labelKey: "tallyExport",
     icon: FileSpreadsheet,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/reports/narcotic-register",
-    label: "Narcotic Register",
+    labelKey: "narcoticRegister",
     icon: ShieldAlert,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/reports/hsn-summary",
-    label: "HSN Summary",
+    labelKey: "hsnSummary",
     icon: FileSpreadsheet,
     roles: ["owner", "pharmacist"],
   },
   {
     href: "/reports/gstr-export",
-    label: "GSTR-1 / 3B Export",
+    labelKey: "gstrExport",
     icon: FileSpreadsheet,
     roles: ["owner", "pharmacist"],
   },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/settings", labelKey: "settings", icon: Settings },
 ];
 
 export function AppShell({
@@ -220,6 +225,8 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const t = useTranslations("nav");
+  const tCommon = useTranslations("common");
 
   const items = NAV_ITEMS.filter(
     (item) =>
@@ -258,7 +265,7 @@ export function AppShell({
                 )}
               >
                 <Icon className="h-4 w-4" />
-                {item.label}
+                {t(item.labelKey)}
               </Link>
             );
           })}
@@ -268,15 +275,16 @@ export function AppShell({
             {user.name} · {user.role.replace("_", " ")}
           </div>
           <SignOutButton variant="ghost" size="sm" className="w-full justify-start">
-            Sign out
+            {tCommon("signOut")}
           </SignOutButton>
           {user.showPoweredBy && (
-            <div className="mt-1.5 px-2 text-[10px] text-sidebar-foreground/40">Powered by Pharmacy Billing</div>
+            <div className="mt-1.5 px-2 text-[10px] text-sidebar-foreground/40">{tCommon("poweredBy")}</div>
           )}
         </div>
       </aside>
       <main className="flex flex-1 flex-col overflow-x-hidden bg-background print:w-full">
-        <div className="flex h-12 shrink-0 items-center justify-end border-b px-4 print:hidden">
+        <div className="flex h-12 shrink-0 items-center justify-end gap-3 border-b px-4 print:hidden">
+          <LanguageSwitcher />
           <BranchSwitcher
             branches={branchScope.branches}
             selectedBranchId={branchScope.branchId}

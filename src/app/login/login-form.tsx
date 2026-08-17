@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,16 +12,17 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { AlertCircle, Loader2 } from "lucide-react";
 
-const ERROR_MESSAGES: Record<string, string> = {
-  MFA_REQUIRED: "Enter the 6-digit code from your authenticator app.",
-  INVALID_TOTP: "That code is invalid or expired. Try again.",
-  TENANT_SUSPENDED: "This account has been suspended. Contact support for help.",
-  credentials: "Incorrect email or password.",
-};
-
 export function LoginForm() {
+  const t = useTranslations("login");
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+
+  const ERROR_MESSAGES: Record<string, string> = {
+    MFA_REQUIRED: t("errorMfaRequired"),
+    INVALID_TOTP: t("errorInvalidTotp"),
+    TENANT_SUSPENDED: t("errorTenantSuspended"),
+    credentials: t("errorCredentials"),
+  };
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -57,7 +59,7 @@ export function LoginForm() {
           setNeedsTotp(true);
           setError(null);
         } else {
-          setError(ERROR_MESSAGES[code] ?? "Sign in failed. Please try again.");
+          setError(ERROR_MESSAGES[code] ?? t("errorGeneric"));
           if (needsTotp) setTotpCode("");
         }
         return;
@@ -81,18 +83,18 @@ export function LoginForm() {
     <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-xl">Pharmacy Billing</CardTitle>
+          <CardTitle className="text-xl">{t("title")}</CardTitle>
           <CardDescription>
-            Sign in to continue to the counter ·{" "}
+            {t("subtitle")} ·{" "}
             <a href="/signup" className="underline underline-offset-2">
-              Start a free trial
+              {t("startTrial")}
             </a>
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t("email")}</Label>
               <Input
                 id="email"
                 ref={emailRef}
@@ -105,7 +107,7 @@ export function LoginForm() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t("password")}</Label>
               <Input
                 id="password"
                 type="password"
@@ -119,7 +121,7 @@ export function LoginForm() {
 
             {needsTotp && (
               <div className="space-y-1.5">
-                <Label htmlFor="totp">Authenticator code</Label>
+                <Label htmlFor="totp">{t("authenticatorCode")}</Label>
                 <InputOTP
                   ref={totpRef as React.Ref<React.ElementRef<typeof InputOTP>>}
                   maxLength={6}
@@ -146,13 +148,13 @@ export function LoginForm() {
             )}
             {needsTotp && !error && (
               <p className="text-sm text-muted-foreground">
-                Password verified. {ERROR_MESSAGES.MFA_REQUIRED}
+                {t("passwordVerified")} {ERROR_MESSAGES.MFA_REQUIRED}
               </p>
             )}
 
             <Button type="submit" className="w-full" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {needsTotp ? "Verify code" : "Sign in"}
+              {needsTotp ? t("verifyCode") : t("signIn")}
             </Button>
           </form>
         </CardContent>

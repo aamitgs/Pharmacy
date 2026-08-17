@@ -2,9 +2,12 @@
 
 import { useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
+import { useLocale, useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { formatCurrency } from "@/lib/format";
+import type { AppLocale } from "@/i18n/locales";
 import type { PosItem } from "./types";
 
 function matches(item: PosItem, q: string) {
@@ -46,6 +49,8 @@ export function SearchPanel({
   onSelect: (item: PosItem) => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
 }) {
+  const t = useTranslations("pos.search");
+  const locale = useLocale() as AppLocale;
   const [query, setQuery] = useState("");
   const [highlighted, setHighlighted] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -104,7 +109,7 @@ export function SearchPanel({
       <Input
         ref={inputRef}
         autoFocus
-        placeholder="Search by item name, generic name, or scan barcode…"
+        placeholder={t("placeholder")}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={onKeyDown}
@@ -143,12 +148,12 @@ export function SearchPanel({
                       </div>
                     </div>
                     <Badge className="shrink-0 gap-1 bg-destructive/10 text-destructive hover:bg-destructive/10">
-                      Out of stock
+                      {t("outOfStock")}
                     </Badge>
                   </div>
                   {substitutes.length > 0 && (
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      <span className="text-xs text-muted-foreground">Try instead:</span>
+                      <span className="text-xs text-muted-foreground">{t("tryInstead")}</span>
                       {substitutes.map((sub) => (
                         <button
                           key={sub.id}
@@ -191,8 +196,8 @@ export function SearchPanel({
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <div className="font-medium tabular-nums">₹{fefo?.saleRate.toFixed(2)}</div>
-                  <div className="text-xs text-muted-foreground">{qty} in stock</div>
+                  <div className="font-medium tabular-nums">{fefo ? formatCurrency(fefo.saleRate, locale) : ""}</div>
+                  <div className="text-xs text-muted-foreground">{t("inStock", { count: qty })}</div>
                 </div>
               </button>
             );

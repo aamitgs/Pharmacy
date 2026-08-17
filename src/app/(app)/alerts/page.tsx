@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getTranslations } from "next-intl/server";
 import { auth } from "@/auth";
 import { getAlerts } from "@/lib/actions/alerts";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,7 @@ import { FilePlus2, Sparkles, TriangleAlert } from "lucide-react";
 
 export default async function AlertsPage() {
   const session = await auth();
+  const t = await getTranslations("alerts");
   const {
     lowStock,
     reorderSuggestions,
@@ -28,10 +30,8 @@ export default async function AlertsPage() {
   return (
     <div className="space-y-8 p-6">
       <div>
-        <h1 className="text-lg font-semibold">Alerts</h1>
-        <p className="text-sm text-muted-foreground">
-          Live stock issues that need attention — act on them directly from here.
-        </p>
+        <h1 className="text-lg font-semibold">{t("title")}</h1>
+        <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
       </div>
 
       <div className="space-y-3">
