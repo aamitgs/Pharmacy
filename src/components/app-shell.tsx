@@ -33,6 +33,7 @@ import {
   ShieldCheck,
   FileHeart,
   RefreshCcw,
+  FileSignature,
 } from "lucide-react";
 
 type NavItem = {
@@ -108,6 +109,12 @@ const NAV_ITEMS: NavItem[] = [
     href: "/coupons",
     label: "Coupons",
     icon: Ticket,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/rate-contracts",
+    label: "Rate Contracts",
+    icon: FileSignature,
     roles: ["owner", "pharmacist"],
   },
   {

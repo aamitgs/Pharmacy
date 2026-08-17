@@ -353,6 +353,19 @@ export async function seedTenantSlice(suffix: string) {
       },
     });
 
+    // Phase 9: rate contract fixture.
+    const rateContract = await tx.rateContract.create({
+      data: {
+        id: `ratecontract-${suffix}`,
+        tenantId: tenant.id,
+        customerId: customer.id,
+        itemId: item.id,
+        contractRate: 80,
+        validFrom: new Date("2020-01-01"),
+        validTo: new Date("2030-01-01"),
+      },
+    });
+
     // Phase 9: customer portal fixtures.
     const customerOtp = await tx.customerOtp.create({
       data: {
@@ -430,6 +443,7 @@ export async function seedTenantSlice(suffix: string) {
       customerOtpId: customerOtp.id,
       refillRequestId: refillRequest.id,
       pushSubscriptionId: pushSubscription.id,
+      rateContractId: rateContract.id,
     };
   });
 }

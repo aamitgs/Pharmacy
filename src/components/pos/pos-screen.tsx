@@ -9,6 +9,7 @@ import { computeBilling, effectiveDiscountPercent, type BillingLineInput, type S
 import { applySchemes } from "@/lib/scheme-engine";
 import { completeSale, getPosData, verifyManagerPin, verifyPharmacistCredentials } from "@/lib/actions/pos";
 import { validateCoupon } from "@/lib/actions/coupons";
+import { listActiveRateContractsForCustomer } from "@/lib/actions/rate-contracts";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { saveCache, queueSale, listPendingSales, discardSale, newOfflineClientId } from "@/lib/offline/queue";
 import { syncPendingSales } from "@/lib/offline/sync";
@@ -165,15 +166,56 @@ export function PosScreen({
 
   const selectedCustomer = customers.find((c) => c.id === store.customerId) ?? null;
 
+  // Phase 9: rate contracts — re-fetched by customerId whenever it changes,
+  // same "client is a preview, completeSale re-checks server-side" rule as
+  // schemes/coupons. Keyed by itemId (a contract applies regardless of
+  // which batch ends up filling the line) and turned into a per-lineId map
+  // below for CartTable, mirroring schemeByLineId's shape.
+  const [contractRows, setContractRows] = useState<{ itemId: string; contractRate: number }[]>([]);
+  useEffect(() => {
+    if (!store.customerId) return;
+    let cancelled = false;
+    listActiveRateContractsForCustomer(store.customerId)
+      .then((rows) => {
+        if (!cancelled) setContractRows(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setContractRows([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [store.customerId]);
+  // No customer selected -> no contract can apply, regardless of whatever
+  // rows a previous customer's fetch left in state.
+  const contractRateByItemId = useMemo(
+    () => (store.customerId ? new Map(contractRows.map((r) => [r.itemId, r.contractRate])) : new Map<string, number>()),
+    [store.customerId, contractRows]
+  );
+
+  const contractRateByLineId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const l of store.lines) {
+      const rate = contractRateByItemId.get(l.itemId);
+      if (rate !== undefined) map.set(l.lineId, rate);
+    }
+    return map;
+  }, [store.lines, contractRateByItemId]);
+
   // Live "why" preview only — completeSale re-evaluates schemes and the
   // coupon server-side and never trusts these client-computed amounts.
   const schemeApplications = useMemo(
     () =>
       applySchemes(
         schemes,
-        store.lines.map((l) => ({ lineId: l.lineId, itemId: l.itemId, qty: l.qty, rate: l.rate }))
+        store.lines.map((l) => ({
+          lineId: l.lineId,
+          itemId: l.itemId,
+          qty: l.qty,
+          rate: contractRateByItemId.get(l.itemId) ?? l.rate,
+        }))
       ),
-    [schemes, store.lines]
+    [schemes, store.lines, contractRateByItemId]
   );
   const schemeByLineId = useMemo(
     () => new Map(schemeApplications.map((a) => [a.lineId, a])),
@@ -184,7 +226,7 @@ export function PosScreen({
     const lineInputs: BillingLineInput[] = store.lines.map((l) => ({
       lineId: l.lineId,
       qty: l.qty,
-      rate: l.rate,
+      rate: contractRateByItemId.get(l.itemId) ?? l.rate,
       taxRate: l.taxRate,
       discountPercent: l.discountPercent,
       schemeDiscountAmount: schemeByLineId.get(l.lineId)?.discountAmount ?? 0,
@@ -203,7 +245,7 @@ export function PosScreen({
       });
     }
     return computeBilling(lineInputs, billDiscounts);
-  }, [store.lines, store.billDiscount, store.appliedCoupon, schemeByLineId, selectedCustomer]);
+  }, [store.lines, store.billDiscount, store.appliedCoupon, schemeByLineId, selectedCustomer, contractRateByItemId]);
 
   const needsPrescription = store.lines.some((l) => REQUIRES_PRESCRIPTION.has(l.scheduleClass));
 
@@ -547,6 +589,7 @@ export function PosScreen({
           onOverrideBatch={handleOverrideBatch}
           onRemove={handleRemove}
           schemeByLineId={schemeByLineId}
+          contractRateByLineId={contractRateByLineId}
         />
       </div>
 

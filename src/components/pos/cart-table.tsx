@@ -22,6 +22,7 @@ export function CartTable({
   onOverrideBatch,
   onRemove,
   schemeByLineId,
+  contractRateByLineId,
 }: {
   lines: CartLine[];
   catalogByItemId: Map<string, PosItem>;
@@ -33,6 +34,7 @@ export function CartTable({
   onOverrideBatch: (lineId: string, batchId: string) => void;
   onRemove: (lineId: string) => void;
   schemeByLineId: Map<string, SchemeApplication>;
+  contractRateByLineId: Map<string, number>;
 }) {
   const qtyRefs = useRef<Map<string, HTMLInputElement>>(new Map());
 
@@ -74,8 +76,10 @@ export function CartTable({
           {lines.map((line) => {
             const catalogItem = catalogByItemId.get(line.itemId);
             const otherBatches = catalogItem?.batches ?? [];
+            const contractRate = contractRateByLineId.get(line.lineId);
+            const effectiveRate = contractRate ?? line.rate;
             const grossBeforeTax =
-              line.qty * line.rate * (1 - line.discountPercent / 100);
+              line.qty * effectiveRate * (1 - line.discountPercent / 100);
             const lineTotal = grossBeforeTax * (1 + line.taxRate / 100);
             const expired = new Date(line.expiryDate) < new Date();
 
@@ -94,6 +98,11 @@ export function CartTable({
                   {schemeByLineId.get(line.lineId) && (
                     <Badge className="mt-0.5 block w-fit bg-success/15 text-[10px] text-success hover:bg-success/15">
                       {schemeByLineId.get(line.lineId)!.reason}
+                    </Badge>
+                  )}
+                  {contractRate !== undefined && (
+                    <Badge variant="outline" className="mt-0.5 block w-fit text-[10px]">
+                      Contract rate applied
                     </Badge>
                   )}
                 </td>
@@ -138,7 +147,7 @@ export function CartTable({
                   />
                 </td>
                 <td className="px-3 py-2 text-right align-top tabular-nums">
-                  ₹{line.rate.toFixed(2)}
+                  ₹{effectiveRate.toFixed(2)}
                 </td>
                 <td className="px-3 py-2 align-top">
                   <Input

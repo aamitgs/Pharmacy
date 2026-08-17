@@ -100,6 +100,8 @@ model Tenant {
 
   pushSubscriptions PushSubscription[]
 
+  rateContracts RateContract[]
+
   @@map("tenants")
 }
 
@@ -250,6 +252,7 @@ model Item {
   refillReminders     RefillReminder[]
 
   narcoticRegisterEntries NarcoticRegisterEntry[]
+  rateContracts           RateContract[]
 
   @@index([tenantId])
   @@index([tenantId, name])
@@ -337,6 +340,7 @@ model Customer {
   refillReminders RefillReminder[]
   otps            CustomerOtp[]
   refillRequests  RefillRequest[]
+  rateContracts   RateContract[]
 
   @@index([tenantId])
   @@index([tenantId, phone])
@@ -584,6 +588,35 @@ model Coupon {
   @@unique([tenantId, code])
   @@index([tenantId])
   @@map("coupons")
+}
+
+/**
+ * Phase 9: a negotiated rate for one customer + one item — auto-applied at
+ * POS billing in place of the batch's normal saleRate when active
+ * (validFrom <= now <= validTo), with a "Contract rate applied" indicator
+ * on the cart line (src/components/pos/cart-table.tsx). Rows are kept
+ * around after expiry/deactivation for history rather than deleted — the
+ * `active` flag plus the date range together decide whether one currently
+ * applies (same shape as Scheme above).
+ */
+model RateContract {
+  id           String   @id @default(cuid())
+  tenantId     String
+  customerId   String
+  itemId       String
+  contractRate Decimal  @db.Decimal(10, 2)
+  validFrom    DateTime
+  validTo      DateTime
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  item     Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, customerId, itemId])
+  @@map("rate_contracts")
 }
 
 model Doctor {

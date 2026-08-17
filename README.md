@@ -1052,6 +1052,44 @@ end-to-end against a real ECDH subscriber keypair and a local HTTPS
 server standing in for a push service — the one piece a browser-driven
 test in this environment couldn't reach directly.
 
+### Rate contract management
+
+A negotiated rate for one customer + one item, auto-applied at POS billing
+in place of the batch's normal sale rate whenever that customer is
+selected and buys that item — for bulk buyers, institutional customers,
+or anyone with a standing price agreement.
+
+- **`RateContract`** (`customerId`, `itemId`, `contractRate`,
+  `validFrom`/`validTo`, `active`) — same "active, in-date rows" shape as
+  `Scheme` (`src/lib/actions/schemes.ts`'s `listActiveSchemesForBilling`),
+  scoped further to one customer. Managed on a new `/rate-contracts`
+  screen (owner/pharmacist can view, owner-only can create/edit — the
+  same split as Schemes).
+- **Auto-applied, not a discount.** A contract directly replaces the
+  line's base rate rather than adding a `Discount` row over MRP — the
+  POS cart shows a "Contract rate applied" badge and the adjusted rate
+  the moment a contracted customer is selected, and scheme/coupon
+  discounts still stack correctly on top of the contract rate rather
+  than the original batch rate, since both the client preview and the
+  server's `completeSale` feed the same effective-rate lookup into
+  scheme evaluation, the bill total, and the persisted
+  `SalesInvoiceItem.rate`.
+- **Never trusts the client.** Exactly like schemes and coupons,
+  `completeSale` re-fetches active contracts for the customer server-side
+  and recomputes from there — the client's badge/rate display is a
+  preview only.
+
+Verified live against a real running instance: created a rate contract
+(₹15 against a ₹28 normal sale rate) for a test customer + item directly
+in the database, then — as a real logged-in counter staff session — opened
+POS, selected that customer, added the contracted item, confirmed the
+"Contract rate applied" badge and the adjusted ₹15.00 rate appeared in the
+cart, completed the sale, and confirmed via direct query that the
+persisted `SalesInvoiceItem.rate` was ₹15 (not ₹28) with the invoice total
+correctly taxed off that rate. Also confirmed a non-owner/pharmacist role
+(`counter_staff`) sees neither the "Rate Contracts" nav item nor the page
+itself (blocked server-side, not just hidden).
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,
@@ -1061,13 +1099,13 @@ shipped in Phase 7; cloud backup, AI-assisted suggestions, cross-branch
 analytics, WhatsApp refill reminders, GRN scheme tracking, Tally sync, and
 insurance/TPA cashless billing shipped in Phase 8 (see above, each with
 its own live-verification caveats where a real third-party credential
-wasn't available in this environment); a customer-facing portal and an
-installable owner PWA with push notifications shipped in Phase 9 (see
-above — a *native* mobile app was confirmed skipped in favor of the PWA
-approach). What's still deliberately out of scope: rate contracts,
-cold-chain tracking, customer feedback capture, and franchise/dealer
-management (all planned for the rest of Phase 9, not yet built),
-marketplace integration (1mg/PharmEasy/Netmeds — explicitly skipped in
+wasn't available in this environment); a customer-facing portal, an
+installable owner PWA with push notifications, and rate contract
+management shipped in Phase 9 (see above — a *native* mobile app was
+confirmed skipped in favor of the PWA approach). What's still deliberately
+out of scope: cold-chain tracking, customer feedback capture, and
+franchise/dealer management (all planned for the rest of Phase 9, not yet
+built), marketplace integration (1mg/PharmEasy/Netmeds — explicitly skipped in
 Phase 8), a full self-serve SaaS billing-history UI (Settings > Billing
 shows the current plan and lets you switch — there's no invoice history/PDF
 receipts screen), and replacing the explainable statistical approach with

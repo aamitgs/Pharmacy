@@ -296,6 +296,32 @@ export async function completeSale(input: CompleteSaleInput) {
       })
     : null;
 
+  // Phase 9: rate contracts — re-fetched and re-checked server-side, same
+  // "client badge is a preview, never a trusted input" rule as schemes
+  // above. Directly replaces the batch's normal saleRate wherever it feeds
+  // into billing math (scheme evaluation, billingLines, and the persisted
+  // SalesInvoiceItem.rate itself) — a contract isn't a discount over MRP,
+  // it's a different agreed base rate, so it doesn't get its own Discount row.
+  const contractRateByItemId = new Map<string, number>();
+  if (customer) {
+    const itemIds = [...new Set(parsed.lines.map((l) => l.itemId))];
+    const now = new Date();
+    const contracts = await prisma.rateContract.findMany({
+      where: {
+        tenantId,
+        customerId: customer.id,
+        itemId: { in: itemIds },
+        active: true,
+        validFrom: { lte: now },
+        validTo: { gte: now },
+      },
+    });
+    for (const c of contracts) contractRateByItemId.set(c.itemId, Number(c.contractRate));
+  }
+  function effectiveRate(itemId: string, batch: { saleRate: unknown }): number {
+    return contractRateByItemId.get(itemId) ?? Number(batch.saleRate);
+  }
+
   if (parsed.paymentMode === "credit") {
     if (!customer) {
       throw new Error("Select a customer with a credit limit for credit sales.");
@@ -324,7 +350,7 @@ export async function completeSale(input: CompleteSaleInput) {
       lineId: `${l.itemId}:${l.batchId}`,
       itemId: l.itemId,
       qty: l.qty,
-      rate: Number(batchMap.get(l.batchId)!.saleRate),
+      rate: effectiveRate(l.itemId, batchMap.get(l.batchId)!),
     }))
   );
   const schemeByLineId = new Map(schemeApplications.map((a) => [a.lineId, a]));
@@ -343,7 +369,7 @@ export async function completeSale(input: CompleteSaleInput) {
     return {
       lineId,
       qty: l.qty,
-      rate: Number(batch.saleRate),
+      rate: effectiveRate(l.itemId, batch),
       taxRate: Number(batch.item.taxRate),
       discountPercent: l.discountPercent,
       schemeDiscountAmount: schemeByLineId.get(lineId)?.discountAmount ?? 0,
@@ -446,7 +472,7 @@ export async function completeSale(input: CompleteSaleInput) {
           itemId: line.itemId,
           batchId: line.batchId,
           qty: line.qty,
-          rate: batch.saleRate,
+          rate: effectiveRate(line.itemId, batch),
           taxRate: batch.item.taxRate,
           discountAmount:
             lineBilling.itemDiscountAmount + lineBilling.schemeDiscountAmount + lineBilling.billDiscountShare,
