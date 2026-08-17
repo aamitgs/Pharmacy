@@ -842,6 +842,58 @@ XML through the actual download route, confirmed well-formed
 content), and confirmed every one of the four generated vouchers'
 ledger entries summed to exactly zero.
 
+### Insurance/TPA cashless billing
+
+Adds `insurance` as a fifth POS payment mode alongside cash/UPI/card/
+credit — conceptually the same "owed, not yet collected" idea credit
+sales already have, except the debtor is an insurer/TPA rather than the
+customer, so it gets its own claim-lifecycle model
+(`InsuranceClaim`) instead of overloading `CustomerLedgerEntry` with a
+payer that isn't a customer.
+
+- **Billing**: selecting Insurance at the till (`src/components/pos/bottom-bar.tsx`)
+  reveals a provider picker, an optional claim number, and a co-pay
+  amount (₹0 by default — fully cashless). `completeSale` creates the
+  `InsuranceClaim` in the same transaction as the invoice:
+  `claimedAmount = total - coPayAmount`. Blocked while offline, the same
+  as credit sales, since both need a live provider/ledger check this
+  app's offline queue can't safely approve from cached state.
+- **Master data**: `/insurance-providers` (owner/pharmacist), mirroring
+  the existing Doctors master-data screen exactly — a list plus a quick-add
+  dialog, no new pattern introduced. Providers can be deactivated (kept
+  for historical claims, dropped from the POS picker) rather than
+  deleted.
+- **Claim lifecycle**: `/insurance-claims` lists every cashless sale with
+  an "outstanding" total (pending + approved claims' `claimedAmount`);
+  `/insurance-claims/[id]` drives the status machine — pending →
+  approved/rejected, approved → settled/rejected, rejected → pending
+  (resubmit) — enforced server-side
+  (`updateInsuranceClaimStatus`'s `VALID_TRANSITIONS` table), not just
+  hidden by which buttons render. Settling requires the amount the
+  insurer actually paid (`settledAmount`, tracked separately from
+  `claimedAmount` since TPAs don't always pay the full claim); rejecting
+  requires a reason.
+- **Tally export correctness**: an insurance sale's debit side in
+  `src/lib/actions/tally-export.ts` now splits across Cash (whatever
+  co-pay was collected) and the insurance provider's own ledger name
+  (the claimed/receivable portion), joined from the invoice's
+  `InsuranceClaim` — not treated as a same-day cash sale, which would
+  have overstated cash and understated receivables for every cashless
+  sale.
+
+Verified live against a real running instance end to end: a real POS
+insurance sale (qty 2 with a ₹50 co-pay) produced the correct
+`claimedAmount` (invoice total minus co-pay) on a real `InsuranceClaim`
+row; the claims list and detail pages showed it correctly; walked a
+claim through approve → settle (with a settled amount that intentionally
+differs from the claimed amount) and confirmed both the UI and the
+database reflected it; walked a second claim through reject → resubmit
+and confirmed the reason displayed and the status returned to pending;
+and confirmed the Tally export for that period correctly showed the
+insurer as a ledger, a separate Cash entry for the co-pay, and that
+every voucher (including this split one) still balanced to exactly
+zero.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,

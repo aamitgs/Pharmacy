@@ -86,6 +86,9 @@ model Tenant {
 
   refillReminders RefillReminder[]
 
+  insuranceProviders InsuranceProvider[]
+  insuranceClaims    InsuranceClaim[]
+
   @@map("tenants")
 }
 
@@ -513,6 +516,10 @@ enum PaymentMode {
   upi
   card
   credit
+  // Phase 8: cashless insurance/TPA billing — same "owed, not yet
+  // collected" idea as credit, except the debtor is an InsuranceProvider
+  // (tracked via InsuranceClaim) instead of the customer's own ledger.
+  insurance
 }
 
 enum InvoiceStatus {
@@ -576,10 +583,81 @@ model SalesInvoice {
   discounts               Discount[]
   narcoticRegisterEntries NarcoticRegisterEntry[]
   whatsappLogs            WhatsAppLog[]
+  insuranceClaim          InsuranceClaim?
 
   @@unique([tenantId, invoiceNo])
   @@index([tenantId, invoiceDate])
   @@map("sales_invoices")
+}
+
+// ---------------------------------------------------------------------------
+// Insurance / TPA cashless billing — Phase 8
+// ---------------------------------------------------------------------------
+
+model InsuranceProvider {
+  id           String   @id @default(cuid())
+  tenantId     String
+  name         String
+  // The TPA's own code for this insurer, where distinct from the insurer
+  // itself (many Indian health policies are administered by a separate
+  // TPA) — free text, not validated against any registry.
+  tpaCode      String?
+  contactPhone String?
+  contactEmail String?
+  // Inactive providers stay for historical claims (never deleted) but drop
+  // out of the POS payment-mode picker's provider list.
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  claims InsuranceClaim[]
+
+  @@index([tenantId])
+  @@map("insurance_providers")
+}
+
+enum InsuranceClaimStatus {
+  pending
+  approved
+  rejected
+  settled
+}
+
+/**
+ * One row per insurance-billed SalesInvoice (paymentMode = "insurance") —
+ * the same "owed, not yet collected" relationship credit sales already
+ * have via CustomerLedgerEntry, except the debtor is the TPA/insurer, so it
+ * gets its own claim-lifecycle model instead of overloading the customer
+ * ledger with a payer that isn't a customer.
+ */
+model InsuranceClaim {
+  id                  String               @id @default(cuid())
+  tenantId            String
+  invoiceId           String               @unique
+  insuranceProviderId String
+  claimNumber         String?
+  // What's actually billed to the insurer — invoice total minus whatever
+  // co-pay the patient paid at the counter.
+  claimedAmount       Decimal              @db.Decimal(12, 2)
+  coPayAmount         Decimal              @default(0) @db.Decimal(12, 2)
+  status              InsuranceClaimStatus @default(pending)
+  // Set only once status moves to "settled" — the TPA doesn't always pay
+  // the full claimedAmount (deductions, partial approval), so this is
+  // tracked separately rather than assumed equal.
+  settledAmount       Decimal?             @db.Decimal(12, 2)
+  settledAt           DateTime?
+  rejectionReason     String?
+  notes               String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice           SalesInvoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  insuranceProvider InsuranceProvider @relation(fields: [insuranceProviderId], references: [id])
+
+  @@index([tenantId])
+  @@index([insuranceProviderId])
+  @@map("insurance_claims")
 }
 
 model SalesInvoiceItem {

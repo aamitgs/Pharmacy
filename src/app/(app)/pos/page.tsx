@@ -15,6 +15,7 @@ export default async function PosPage() {
       schemes={data.schemes}
       tenantId={data.tenantId}
       receiptHeader={data.receiptHeader}
+      insuranceProviders={data.insuranceProviders}
     />
   );
 }

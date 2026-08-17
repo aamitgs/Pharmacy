@@ -44,6 +44,7 @@ export function PosScreen({
   schemes,
   tenantId,
   receiptHeader,
+  insuranceProviders,
 }: {
   items: PosItem[];
   customers: PosCustomer[];
@@ -54,6 +55,7 @@ export function PosScreen({
   schemes: PosScheme[];
   tenantId: string;
   receiptHeader: ReceiptHeader;
+  insuranceProviders: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const store = useCartStore();
@@ -216,6 +218,9 @@ export function PosScreen({
         return "Select a customer with a credit account for credit sales.";
       }
     }
+    if (store.paymentMode === "insurance" && !store.insuranceProviderId) {
+      return "Select an insurance provider for a cashless sale.";
+    }
     if (!branchId) return "No branch configured for this pharmacy yet.";
     // Offline-specific blocks — anything that needs a real-time server
     // check (credit ledger validation, PIN/pharmacist verification) can't
@@ -224,12 +229,27 @@ export function PosScreen({
       if (store.paymentMode === "credit") {
         return "Credit sales need a live connection — switch payment mode or wait until back online.";
       }
+      if (store.paymentMode === "insurance") {
+        return "Insurance sales need a live connection — switch payment mode or wait until back online.";
+      }
       if (needsPrescription && !SELF_SIGNOFF_ROLES.has(role)) {
         return "Prescription sign-off needs a live connection for pharmacist verification.";
       }
     }
     return null;
-  }, [store.lines, needsPrescription, store.doctorId, store.patientName, store.paymentMode, store.customerId, customers, branchId, isOnline, role]);
+  }, [
+    store.lines,
+    needsPrescription,
+    store.doctorId,
+    store.patientName,
+    store.paymentMode,
+    store.customerId,
+    store.insuranceProviderId,
+    customers,
+    branchId,
+    isOnline,
+    role,
+  ]);
 
   const focusSearch = useCallback(() => {
     searchInputRef.current?.focus();
@@ -366,6 +386,9 @@ export function PosScreen({
         patientName: store.patientName || undefined,
         patientAge: store.patientAge ? Number(store.patientAge) : undefined,
         paymentMode: store.paymentMode,
+        insuranceProviderId: store.paymentMode === "insurance" ? store.insuranceProviderId : undefined,
+        claimNumber: store.paymentMode === "insurance" ? store.claimNumber || undefined : undefined,
+        coPayAmount: store.paymentMode === "insurance" ? Number(store.coPayAmount || 0) : undefined,
         billDiscount: store.billDiscount,
         couponCode: store.appliedCoupon?.code,
         managerPin: managerPinRef.current,
@@ -547,6 +570,13 @@ export function PosScreen({
         onRemoveCoupon={handleRemoveCoupon}
         couponError={couponError}
         couponChecking={couponChecking}
+        insuranceProviders={insuranceProviders}
+        insuranceProviderId={store.insuranceProviderId}
+        onInsuranceProviderChange={store.setInsuranceProviderId}
+        claimNumber={store.claimNumber}
+        onClaimNumberChange={store.setClaimNumber}
+        coPayAmount={store.coPayAmount}
+        onCoPayAmountChange={store.setCoPayAmount}
       />
 
       <ManagerPinDialog

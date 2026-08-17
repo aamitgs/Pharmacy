@@ -29,6 +29,8 @@ import {
   BedDouble,
   ClipboardPlus,
   LineChart,
+  ShieldCheck,
+  FileHeart,
 } from "lucide-react";
 
 type NavItem = {
@@ -70,6 +72,18 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/doctors", label: "Doctors", icon: Stethoscope },
   { href: "/invoices", label: "Invoices", icon: Receipt },
+  {
+    href: "/insurance-claims",
+    label: "Insurance Claims",
+    icon: FileHeart,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/insurance-providers",
+    label: "Insurance Providers",
+    icon: ShieldCheck,
+    roles: ["owner", "pharmacist"],
+  },
   {
     href: "/schemes",
     label: "Schemes",

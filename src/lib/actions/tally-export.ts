@@ -49,6 +49,11 @@ function cashOrBankFromNote(note: string | null): string {
  * CGST/SGST reuses the item's current (sale-side) taxRate — a reasonable
  * assumption for a pharmacy buying and selling the same HSN-coded item,
  * not a guarantee if a tenant has since changed an item's tax rate.
+ *
+ * A cashless insurance sale's debit side splits across whatever co-pay was
+ * actually collected as Cash and the insurer's own name for the claimed
+ * (receivable) portion — see the InsuranceClaim it's joined against —
+ * rather than treating the whole invoice as a same-day cash sale.
  */
 export interface TallyExportResult {
   xml: string;
@@ -71,7 +76,7 @@ export async function getTallyExportXml(from: string, to: string): Promise<Tally
   const [invoices, grns, customerPayments, supplierPayments] = await Promise.all([
     prisma.salesInvoice.findMany({
       where: { tenantId, ...branchFilter, status: "completed", invoiceDate: dateFilter },
-      include: { customer: { select: { name: true } } },
+      include: { customer: { select: { name: true } }, insuranceClaim: { include: { insuranceProvider: { select: { name: true } } } } },
       orderBy: { invoiceDate: "asc" },
     }),
     prisma.grn.findMany({
@@ -103,11 +108,30 @@ export async function getTallyExportXml(from: string, to: string): Promise<Tally
     const total = Number(inv.total);
     const roundOff = round2(total - (taxable + cgst + sgst));
 
-    // Party = whichever ledger is actually debited: the customer for a
-    // credit sale (real receivable), otherwise Cash — a cash/UPI/card sale
-    // has no receivable, so naming the customer as party there would be
+    // Debit side depends on what's actually owed and by whom: a credit
+    // sale owes the customer, a cashless insurance sale owes the TPA for
+    // the claimed portion (split from whatever co-pay was collected as
+    // cash), and everything else is a same-day cash/UPI/card sale with no
+    // receivable at all — naming the customer as party there would be
     // misleading even though this app happens to know who bought it.
-    const partyLedgerName = inv.paymentMode === "credit" ? inv.customer?.name || WALKIN_PARTY_LEDGER : CASH_LEDGER;
+    const debitEntries =
+      inv.paymentMode === "credit"
+        ? [{ ledgerName: inv.customer?.name || WALKIN_PARTY_LEDGER, isDebit: true, amount: total }]
+        : inv.paymentMode === "insurance" && inv.insuranceClaim
+          ? [
+              ...(Number(inv.insuranceClaim.coPayAmount) > 0
+                ? [{ ledgerName: CASH_LEDGER, isDebit: true, amount: round2(Number(inv.insuranceClaim.coPayAmount)) }]
+                : []),
+              { ledgerName: inv.insuranceClaim.insuranceProvider.name, isDebit: true, amount: round2(Number(inv.insuranceClaim.claimedAmount)) },
+            ]
+          : [{ ledgerName: CASH_LEDGER, isDebit: true, amount: total }];
+
+    const partyLedgerName =
+      inv.paymentMode === "credit"
+        ? inv.customer?.name || WALKIN_PARTY_LEDGER
+        : inv.paymentMode === "insurance" && inv.insuranceClaim
+          ? inv.insuranceClaim.insuranceProvider.name
+          : CASH_LEDGER;
 
     vouchers.push({
       vchType: "Sales",
@@ -116,7 +140,7 @@ export async function getTallyExportXml(from: string, to: string): Promise<Tally
       partyLedgerName,
       narration: `POS sale ${inv.invoiceNo}`,
       entries: [
-        { ledgerName: partyLedgerName, isDebit: true, amount: total },
+        ...debitEntries,
         { ledgerName: SALES_LEDGER, isDebit: false, amount: taxable },
         ...(cgst > 0 ? [{ ledgerName: OUTPUT_CGST_LEDGER, isDebit: false, amount: cgst }] : []),
         ...(sgst > 0 ? [{ ledgerName: OUTPUT_SGST_LEDGER, isDebit: false, amount: sgst }] : []),

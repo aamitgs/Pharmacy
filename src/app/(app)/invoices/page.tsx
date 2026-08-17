@@ -11,6 +11,7 @@ const PAYMENT_LABELS: Record<string, string> = {
   upi: "UPI",
   card: "Card",
   credit: "Credit",
+  insurance: "Insurance",
 };
 
 export default async function InvoicesPage() {

@@ -21,6 +21,7 @@ import { validateCoupon } from "@/lib/actions/coupons";
 import { computeCustomerOutstandingBalances } from "@/lib/actions/customers";
 import { runEinvoiceAttempt, runEwayBillAttemptForInvoice } from "@/lib/gsp/engine";
 import { shouldShowPoweredBy } from "@/lib/branding";
+import { listActiveInsuranceProviders } from "@/lib/actions/insurance-providers";
 
 const REQUIRES_PRESCRIPTION: readonly string[] = ["H", "H1", "X"];
 
@@ -32,7 +33,7 @@ export async function getPosData() {
   // branches" (Owner's consolidated view is for reporting, not billing).
   const branchId = await resolveConcreteBranch(tenantId, session.user.role);
 
-  const [items, customers, doctors, tenant, schemes, branch, showPoweredBy] = await Promise.all([
+  const [items, customers, doctors, tenant, schemes, branch, showPoweredBy, insuranceProviders] = await Promise.all([
     // Deliberately not filtered to in-stock items only (Phase 8): an
     // out-of-stock item still needs to be findable by search so the POS
     // screen can offer same-composition substitutes inline instead of the
@@ -55,6 +56,7 @@ export async function getPosData() {
     listActiveSchemesForBilling(tenantId),
     branchId ? prisma.branch.findUnique({ where: { id: branchId } }) : null,
     shouldShowPoweredBy(tenantId),
+    listActiveInsuranceProviders(tenantId),
   ]);
 
   const balances = await computeCustomerOutstandingBalances(tenantId, customers.map((c) => c.id));
@@ -74,6 +76,7 @@ export async function getPosData() {
       loyaltyDiscountPercent: c.loyaltyTier ? Number(c.loyaltyTier.discountPercent) : 0,
     })),
     doctors,
+    insuranceProviders,
     branchId,
     tenantId,
     staffDiscountCapPercent: Number(tenant.staffDiscountCapPercent),
@@ -178,7 +181,10 @@ const completeSaleSchema = z.object({
   doctorId: z.string().optional().nullable(),
   patientName: z.string().trim().optional(),
   patientAge: z.coerce.number().int().positive().optional(),
-  paymentMode: z.enum(["cash", "upi", "card", "credit"]),
+  paymentMode: z.enum(["cash", "upi", "card", "credit", "insurance"]),
+  insuranceProviderId: z.string().optional().nullable(),
+  claimNumber: z.string().trim().optional(),
+  coPayAmount: z.coerce.number().min(0).optional(),
   billDiscount: z.object({
     isPercent: z.boolean(),
     value: z.coerce.number().min(0),
@@ -299,6 +305,16 @@ export async function completeSale(input: CompleteSaleInput) {
     }
   }
 
+  const insuranceProvider =
+    parsed.paymentMode === "insurance" && parsed.insuranceProviderId
+      ? await prisma.insuranceProvider.findFirst({
+          where: { id: parsed.insuranceProviderId, tenantId, active: true },
+        })
+      : null;
+  if (parsed.paymentMode === "insurance" && !insuranceProvider) {
+    throw new Error("Select an insurance provider for a cashless sale.");
+  }
+
   // Schemes are re-fetched and re-evaluated server-side — the client's
   // "why" badges are a preview, never a trusted input.
   const activeSchemes = await listActiveSchemesForBilling(tenantId);
@@ -345,6 +361,11 @@ export async function completeSale(input: CompleteSaleInput) {
   }
 
   const billing = computeBilling(billingLines, billDiscounts);
+
+  const coPayAmount = parsed.paymentMode === "insurance" ? (parsed.coPayAmount ?? 0) : 0;
+  if (parsed.paymentMode === "insurance" && coPayAmount > billing.total) {
+    throw new Error("Co-pay amount cannot exceed the total bill.");
+  }
 
   // Discount-cap check, defense in depth (client already gates this).
   // Only the manual item/bill discounts are staff decisions subject to the
@@ -400,6 +421,19 @@ export async function completeSale(input: CompleteSaleInput) {
         pharmacistSignoffAt: signoffUserId ? now : null,
       },
     });
+
+    if (parsed.paymentMode === "insurance" && insuranceProvider) {
+      await tx.insuranceClaim.create({
+        data: {
+          tenantId,
+          invoiceId: invoice.id,
+          insuranceProviderId: insuranceProvider.id,
+          claimNumber: parsed.claimNumber || null,
+          claimedAmount: billing.total - coPayAmount,
+          coPayAmount,
+        },
+      });
+    }
 
     for (let i = 0; i < parsed.lines.length; i++) {
       const line = parsed.lines[i];
@@ -597,6 +631,7 @@ export async function completeSale(input: CompleteSaleInput) {
   revalidatePath("/invoices");
   revalidatePath("/dashboard");
   revalidatePath("/customers");
+  revalidatePath("/insurance-claims");
 
   // Fire-and-forget: the counter transaction (sale saved, ready to print)
   // is already complete and its response about to return. A slow or down

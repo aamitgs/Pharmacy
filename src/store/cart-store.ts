@@ -41,6 +41,9 @@ interface CartState {
   lastRemoved: RemovedLine | null;
   focusLineId: string | null;
   appliedCoupon: AppliedCoupon | null;
+  insuranceProviderId: string | null;
+  claimNumber: string;
+  coPayAmount: string;
 
   addLine: (line: Omit<CartLine, "lineId" | "qty" | "discountPercent">) => string;
   updateQty: (lineId: string, qty: number) => void;
@@ -60,6 +63,9 @@ interface CartState {
   setPaymentMode: (mode: PaymentMode) => void;
   setPrescriptionImagePath: (path: string | null) => void;
   setAppliedCoupon: (coupon: AppliedCoupon | null) => void;
+  setInsuranceProviderId: (id: string | null) => void;
+  setClaimNumber: (v: string) => void;
+  setCoPayAmount: (v: string) => void;
   reset: () => void;
 }
 
@@ -81,6 +87,9 @@ const initialState = {
   lastRemoved: null as RemovedLine | null,
   focusLineId: null as string | null,
   appliedCoupon: null as AppliedCoupon | null,
+  insuranceProviderId: null as string | null,
+  claimNumber: "",
+  coPayAmount: "",
 };
 
 export const useCartStore = create<CartState>((set, get) => ({
@@ -172,6 +181,9 @@ export const useCartStore = create<CartState>((set, get) => ({
   setPaymentMode: (mode) => set({ paymentMode: mode }),
   setPrescriptionImagePath: (path) => set({ prescriptionImagePath: path }),
   setAppliedCoupon: (coupon) => set({ appliedCoupon: coupon }),
+  setInsuranceProviderId: (id) => set({ insuranceProviderId: id }),
+  setClaimNumber: (v) => set({ claimNumber: v }),
+  setCoPayAmount: (v) => set({ coPayAmount: v }),
 
   reset: () => set({ ...initialState, lines: [] }),
 }));

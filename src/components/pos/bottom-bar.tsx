@@ -22,6 +22,7 @@ const PAYMENT_MODES: { value: PaymentMode; label: string }[] = [
   { value: "upi", label: "UPI" },
   { value: "card", label: "Card" },
   { value: "credit", label: "Credit" },
+  { value: "insurance", label: "Insurance" },
 ];
 
 export function BottomBar({
@@ -44,6 +45,13 @@ export function BottomBar({
   onRemoveCoupon,
   couponError,
   couponChecking,
+  insuranceProviders,
+  insuranceProviderId,
+  onInsuranceProviderChange,
+  claimNumber,
+  onClaimNumberChange,
+  coPayAmount,
+  onCoPayAmountChange,
 }: {
   billing: BillingResult;
   billDiscountValue: number;
@@ -64,6 +72,13 @@ export function BottomBar({
   onRemoveCoupon: () => void;
   couponError: string | null;
   couponChecking: boolean;
+  insuranceProviders: { id: string; name: string }[];
+  insuranceProviderId: string | null;
+  onInsuranceProviderChange: (id: string | null) => void;
+  claimNumber: string;
+  onClaimNumberChange: (v: string) => void;
+  coPayAmount: string;
+  onCoPayAmountChange: (v: string) => void;
 }) {
   const selectedCustomer = customers.find((c) => c.id === customerId);
   const creditEligible = !!selectedCustomer && selectedCustomer.creditLimit !== null;
@@ -145,6 +160,57 @@ export function BottomBar({
               })}
             </div>
           </div>
+
+          {paymentMode === "insurance" && (
+            <div className="col-span-4 grid grid-cols-3 gap-2 rounded-md border bg-muted/20 p-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Insurance provider</Label>
+                <Select
+                  value={insuranceProviderId ?? "__none"}
+                  onValueChange={(v) => onInsuranceProviderChange(v === "__none" ? null : v)}
+                >
+                  <SelectTrigger className="h-8">
+                    <SelectValue placeholder="Select provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none" disabled>
+                      Select provider
+                    </SelectItem>
+                    {insuranceProviders.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="claimNumber" className="text-xs">
+                  Claim number (optional)
+                </Label>
+                <Input
+                  id="claimNumber"
+                  className="h-8"
+                  value={claimNumber}
+                  onChange={(e) => onClaimNumberChange(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="coPayAmount" className="text-xs">
+                  Co-pay collected now (₹)
+                </Label>
+                <Input
+                  id="coPayAmount"
+                  type="number"
+                  min={0}
+                  className="h-8"
+                  value={coPayAmount}
+                  onChange={(e) => onCoPayAmountChange(e.target.value)}
+                  placeholder="0 — fully cashless"
+                />
+              </div>
+            </div>
+          )}
 
           <div className="col-span-4 space-y-1">
             <Label className="text-xs">Coupon code</Label>

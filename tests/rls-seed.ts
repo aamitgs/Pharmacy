@@ -285,6 +285,21 @@ export async function seedTenantSlice(suffix: string) {
       },
     });
 
+    // Phase 8: insurance/TPA cashless billing fixtures.
+    const insuranceProvider = await tx.insuranceProvider.create({
+      data: { id: `insprov-${suffix}`, tenantId: tenant.id, name: `Insurer ${suffix}` },
+    });
+    const insuranceClaim = await tx.insuranceClaim.create({
+      data: {
+        id: `inscl-${suffix}`,
+        tenantId: tenant.id,
+        invoiceId: invoice.id,
+        insuranceProviderId: insuranceProvider.id,
+        claimedAmount: 100.8,
+        coPayAmount: 0,
+      },
+    });
+
     // Phase 7: Hospital Mode fixtures — one full vertical slice, same as
     // everything above.
     const ward = await tx.ward.create({
@@ -372,6 +387,8 @@ export async function seedTenantSlice(suffix: string) {
       apiKeyId: apiKey.id,
       cloudBackupConnectionId: cloudBackupConnection.id,
       refillReminderId: refillReminder.id,
+      insuranceProviderId: insuranceProvider.id,
+      insuranceClaimId: insuranceClaim.id,
       wardId: ward.id,
       wardBatchId: wardBatch.id,
       wardAssignmentId: wardAssignment.id,
