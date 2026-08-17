@@ -110,6 +110,14 @@ model Tenant {
 
   customerFeedback CustomerFeedback[]
 
+  // Phase 9: franchise/dealer management — a tenant may found at most one
+  // group (as franchisor) and belong to at most one group (as a member),
+  // never both merged into a single relation since the two roles carry
+  // different permissions.
+  franchiseGroupOwned FranchiseGroup?
+  franchiseMembership FranchiseMember?
+  franchiseMembersOwned FranchiseMember[] @relation("FranchiseMemberOwnerTenant")
+
   @@map("tenants")
 }
 
@@ -692,6 +700,73 @@ model CustomerFeedback {
   @@index([tenantId])
   @@index([tenantId, branchId, submittedAt])
   @@map("customer_feedback")
+}
+
+/**
+ * Phase 9: franchise/dealer management — links independent tenants
+ * WITHOUT merging their data. Each member tenant's own RLS-protected data
+ * (branches, items, sales, everything) stays fully isolated; membership is
+ * purely a cross-tenant relationship the franchisor and member both opted
+ * into (the franchisor by creating the group, the member by entering its
+ * join code). The most architecturally novel Phase 9 item, built last on
+ * purpose — see src/lib/actions/franchise.ts for how a franchisor session
+ * legally reads aggregate numbers across opted-in members without
+ * violating the single-tenant RLS model everything else in this app
+ * relies on.
+ */
+model FranchiseGroup {
+  id            String    @id @default(cuid())
+  name          String
+  // Given to prospective members out-of-band (phone/email) to join —
+  // same "unique platform-wide code" shape as Tenant.portalSlug, just
+  // random rather than name-derived since it's meant to be shared once,
+  // not linked to indefinitely.
+  joinCode      String    @unique
+  ownerTenantId String    @unique
+  // Set when the franchisor last pushed its standardized item list
+  // (name/genericName/hsnCode/taxRate only — never stock/pricing) to all
+  // current members. A discrete, on-demand sync the franchisor can
+  // re-trigger, not an ongoing feed — see pushStandardizedItemList.
+  itemListPushedAt DateTime?
+  createdAt     DateTime  @default(now())
+
+  ownerTenant Tenant             @relation(fields: [ownerTenantId], references: [id], onDelete: Cascade)
+  members     FranchiseMember[]
+
+  @@map("franchise_groups")
+}
+
+model FranchiseMember {
+  id               String    @id @default(cuid())
+  franchiseGroupId String
+  tenantId         String    @unique
+  // Denormalized copy of franchiseGroup.ownerTenantId, set once at join
+  // time and never changed. This isn't for query convenience — it exists
+  // to break a real Postgres limitation: a naive RLS policy design has
+  // franchise_groups' policy check membership via a subquery into
+  // franchise_members, and franchise_members' policy check ownership via
+  // a subquery into franchise_groups. Postgres detects that mutual
+  // reference as infinite recursion (error 42P17) the moment either
+  // policy is evaluated. Storing the owner directly here means
+  // franchise_members' own policy never has to look at franchise_groups
+  // at all, breaking the cycle — see the migration for the actual
+  // policies.
+  ownerTenantId    String
+  // The member's own explicit opt-in for the franchisor's sales/margin
+  // rollup report to include this tenant's aggregate numbers — off by
+  // default, the member can turn it off again at any time. Deliberately
+  // separate from membership itself: joining a group is not the same as
+  // agreeing to share sales data.
+  rollupOptIn      Boolean   @default(false)
+  joinedAt         DateTime  @default(now())
+
+  franchiseGroup FranchiseGroup @relation(fields: [franchiseGroupId], references: [id], onDelete: Cascade)
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerTenant    Tenant         @relation("FranchiseMemberOwnerTenant", fields: [ownerTenantId], references: [id], onDelete: Cascade)
+
+  @@index([franchiseGroupId])
+  @@index([ownerTenantId])
+  @@map("franchise_members")
 }
 
 model Doctor {

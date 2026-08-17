@@ -377,6 +377,16 @@ export async function seedTenantSlice(suffix: string) {
       },
     });
 
+    // Phase 9: franchise group fixture — deliberately unlinked (this
+    // tenant owns its own group, no cross-membership) so the standard
+    // "A sees its own row, not B's" isolation check below applies
+    // cleanly; a linked owner+member pair is a real, intentional
+    // cross-tenant read and is covered separately, not by this generic
+    // per-table loop (see the migration's own RLS policy comments).
+    const franchiseGroup = await tx.franchiseGroup.create({
+      data: { id: `franchise-${suffix}`, name: `Franchise ${suffix}`, joinCode: `JOIN-${suffix}`, ownerTenantId: tenant.id },
+    });
+
     // Phase 9: customer feedback fixture.
     const customerFeedback = await tx.customerFeedback.create({
       data: {
@@ -469,6 +479,7 @@ export async function seedTenantSlice(suffix: string) {
       rateContractId: rateContract.id,
       temperatureLogId: temperatureLog.id,
       customerFeedbackId: customerFeedback.id,
+      franchiseGroupId: franchiseGroup.id,
     };
   });
 }

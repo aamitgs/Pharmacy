@@ -89,6 +89,7 @@ const cases: Case[] = [
   { label: "RateContract", aId: () => A.rateContractId, bId: () => B.rateContractId, find: (id) => prisma.rateContract.findUnique({ where: { id } }) },
   { label: "TemperatureLog", aId: () => A.temperatureLogId, bId: () => B.temperatureLogId, find: (id) => prisma.temperatureLog.findUnique({ where: { id } }) },
   { label: "CustomerFeedback", aId: () => A.customerFeedbackId, bId: () => B.customerFeedbackId, find: (id) => prisma.customerFeedback.findUnique({ where: { id } }) },
+  { label: "FranchiseGroup", aId: () => A.franchiseGroupId, bId: () => B.franchiseGroupId, find: (id) => prisma.franchiseGroup.findUnique({ where: { id } }) },
   // Indirect (no direct tenantId column — scoped via EXISTS into parent)
   { label: "Batch (indirect via Item)", aId: () => A.batchId, bId: () => B.batchId, find: (id) => prisma.batch.findUnique({ where: { id } }) },
   { label: "SalesInvoiceItem (indirect via SalesInvoice)", aId: () => A.invoiceItemId, bId: () => B.invoiceItemId, find: (id) => prisma.salesInvoiceItem.findUnique({ where: { id } }) },
@@ -195,5 +196,71 @@ describe("the bypass escape hatch itself works (positive control)", () => {
     const ids = items.map((r) => r.id);
     expect(ids).toContain(A.itemId);
     expect(ids).toContain(B.itemId);
+  });
+});
+
+describe("franchise cross-tenant policy (the one deliberate exception to single-column tenantId matching)", () => {
+  // A already owns franchise-A (seeded, unlinked). Here B actually joins
+  // it, so these assertions exercise the real bespoke policy — not just
+  // "A sees A's row, not B's" like every other table in this suite, since
+  // franchise membership is the one relationship meant to be visible
+  // (partially) across a tenant boundary.
+  let memberRowId: string;
+
+  it("B can join A's group (self-service write, tenantId = B's own)", async () => {
+    const member = await asTenant(B.tenantId, () =>
+      prisma.franchiseMember.create({ data: { franchiseGroupId: A.franchiseGroupId, tenantId: B.tenantId, ownerTenantId: A.tenantId } })
+    );
+    memberRowId = member.id;
+    expect(member.tenantId).toBe(B.tenantId);
+  });
+
+  it("B (member) can read A's franchise group", async () => {
+    const group = await asTenant(B.tenantId, () => prisma.franchiseGroup.findUnique({ where: { id: A.franchiseGroupId } }));
+    expect(group).not.toBeNull();
+  });
+
+  it("A (owner) can read B's membership row", async () => {
+    const member = await asTenant(A.tenantId, () => prisma.franchiseMember.findUnique({ where: { id: memberRowId } }));
+    expect(member).not.toBeNull();
+  });
+
+  it("A (owner) cannot edit B's rollupOptIn — WITH CHECK only allows the member's own tenant", async () => {
+    await expect(
+      asTenant(A.tenantId, () => prisma.franchiseMember.update({ where: { id: memberRowId }, data: { rollupOptIn: true } }))
+    ).rejects.toThrow();
+  });
+
+  it("B (member) cannot rename A's franchise group — WITH CHECK only allows the owning tenant", async () => {
+    await expect(
+      asTenant(B.tenantId, () => prisma.franchiseGroup.update({ where: { id: A.franchiseGroupId }, data: { name: "hijacked" } }))
+    ).rejects.toThrow();
+  });
+
+  it("B can update its own rollupOptIn", async () => {
+    const updated = await asTenant(B.tenantId, () =>
+      prisma.franchiseMember.update({ where: { id: memberRowId }, data: { rollupOptIn: true } })
+    );
+    expect(updated.rollupOptIn).toBe(true);
+  });
+
+  it("A (owner) can remove B from the group — DELETE is governed by USING, not WITH CHECK", async () => {
+    await asTenant(A.tenantId, () => prisma.franchiseMember.delete({ where: { id: memberRowId } }));
+    const gone = await asTenant(B.tenantId, () => prisma.franchiseMember.findUnique({ where: { id: memberRowId } }));
+    expect(gone).toBeNull();
+  });
+
+  it("an unrelated third tenant sees neither the group nor a membership in it", async () => {
+    // C is a throwaway tenant, not part of the shared A/B fixture — proves
+    // the member-visibility grant doesn't leak to tenants with no
+    // relationship to the group at all.
+    const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const C = await seedTenantSlice(`c${suffix}`);
+    try {
+      const group = await asTenant(C.tenantId, () => prisma.franchiseGroup.findUnique({ where: { id: A.franchiseGroupId } }));
+      expect(group).toBeNull();
+    } finally {
+      await deleteTenant(C.tenantId);
+    }
   });
 });

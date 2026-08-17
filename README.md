@@ -1159,6 +1159,84 @@ already-submitted state instead of the form, then logged in as the owner
 (through real TOTP MFA) and confirmed the rating and comment appeared
 correctly on the Customer Feedback report.
 
+### Franchise/dealer management
+
+Links independent tenants into a franchise/dealer network without merging
+their data — built last in Phase 9 per the phase spec's own note that it
+"benefits from everything else being stable first," and the most
+architecturally novel item in the phase: every other Phase 9 feature is
+scoped to a single tenant, this one is deliberately, narrowly
+cross-tenant.
+
+- **`FranchiseGroup`** (one row per franchisor, unique `joinCode`) +
+  **`FranchiseMember`** (links a member tenant to a group, with a
+  denormalized `ownerTenantId` and a member-controlled `rollupOptIn`
+  flag). Joining links two independent tenants by reference only — no
+  data is copied or merged, and a member can leave at any time.
+- **Owner-only** (`/franchise`, nav item gated `roles: ["owner"]`, same
+  as every other owner-only screen). A tenant with no group sees
+  create-or-join; a franchisor sees a member table + rollup report +
+  item-push button; a member sees its membership status, a rollup
+  opt-in switch, and a leave-group button.
+- **Opt-in aggregate-only rollup** — a franchisor never sees a member's
+  raw invoices or items, only SUM/COUNT revenue, margin, and invoice
+  count for a date range, and only for members who've explicitly flipped
+  `rollupOptIn` on. This is a real RLS-scoped read as the member tenant
+  (authorized by the member's own opt-in), not a bypass: no per-invoice
+  or per-item detail ever crosses back into the franchisor's session.
+- **One-time standardized item-list push** — a franchisor can push its
+  item list's `genericName`/`hsnCode`/`taxRate` (matched by name, case
+  insensitive) into every opted-in member's item master, creating
+  missing items or updating those three fields on existing ones. Deliberately
+  never touches stock, batches, or pricing — a push does not, and cannot,
+  give a franchisor control over a member's inventory or prices.
+- **RLS design note**: `FranchiseGroup`'s and `FranchiseMember`'s
+  policies can't both subquery each other — Postgres rejects mutually
+  recursive RLS policies (error 42P17, "infinite recursion detected in
+  policy"). Fixed by denormalizing `ownerTenantId` onto `FranchiseMember`
+  so its policy is self-contained (`tenantId = current tenant OR
+  ownerTenantId = current tenant`), leaving `FranchiseGroup`'s policy as
+  the only side with a cross-table subquery — one-directional, no cycle.
+  A separate migration then extends the base `tenants` table's own RLS
+  policy with a narrow franchise-aware exception (a franchisor may read a
+  member's `pharmacyName`, nothing else, no write access), since the
+  existing `id = current tenant` policy otherwise blocks even that
+  minimal cross-tenant read.
+- **Implementation note**: the rollup report and item push both need to
+  read/write *as* each member tenant in turn, inside a single owner
+  request. The app's existing implicit tenant-scoping mechanism
+  (`tenantContext` + AsyncLocalStorage, used throughout the rest of the
+  codebase) proved unreliable specifically when invoked from inside this
+  page's Server Component render — it resolved the correct tenant id
+  when inspected directly, yet the following Prisma query still came
+  back scoped incorrectly. Rather than chase that down further, both
+  loops use the same explicit, already-proven pattern the Super-Admin
+  console and customer portal rely on: the unextended `basePrisma` with
+  an explicit `SELECT set_config('app.current_tenant_id', memberId,
+  true)` batched into the same `$transaction([...])` as the query, one
+  member at a time. RLS is still enforced by Postgres regardless of
+  which client wrapper issues the query.
+
+Verified live against a real running instance: logged in as the demo
+tenant's owner (real TOTP MFA), created a franchise group, recovered its
+join code, logged in as a second tenant's owner in a separate browser
+context, joined via the code, opted in to rollup sharing, confirmed the
+franchisor's dashboard showed the member as opted in, recorded a real
+sale for the member tenant, and confirmed the rollup report correctly
+aggregated it (₹60.00 revenue). Pushed the franchisor's item list and
+confirmed a franchisor-only item ("Paracetamol 500mg") appeared in the
+member's item list with no stock or batch attached. Confirmed the member
+could leave the group and the franchisor's dashboard returned to a
+no-members state.
+
+### Phase 9 wrap-up
+
+All six Phase 9 items are now shipped: customer-facing portal, owner
+mobile PWA, rate contract management, cold-chain temperature tracking,
+customer feedback capture, and franchise/dealer management. Full-suite
+verification (typecheck, lint, `vitest run`, `next build`) passes across
+the combined phase.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,
@@ -1170,12 +1248,13 @@ insurance/TPA cashless billing shipped in Phase 8 (see above, each with
 its own live-verification caveats where a real third-party credential
 wasn't available in this environment); a customer-facing portal, an
 installable owner PWA with push notifications, rate contract management,
-cold-chain temperature tracking, and customer feedback capture shipped in
-Phase 9 (see above — a *native* mobile app was confirmed skipped in favor
-of the PWA approach, and cold-chain tracking is manual-entry only, no
-IoT/sensor integration, per the phase spec). What's still deliberately
-out of scope: franchise/dealer management (planned for the rest of
-Phase 9, not yet built), marketplace integration
+cold-chain temperature tracking, customer feedback capture, and
+franchise/dealer management shipped in Phase 9 (see above — a *native*
+mobile app was confirmed skipped in favor of the PWA approach, cold-chain
+tracking is manual-entry only, no IoT/sensor integration, and franchise
+linking is reference-only, deliberately never merging member tenants'
+data, per the phase spec). Phase 9 is now fully complete. What's still
+deliberately out of scope: marketplace integration
 (1mg/PharmEasy/Netmeds — explicitly skipped in
 Phase 8), a full self-serve SaaS billing-history UI (Settings > Billing
 shows the current plan and lets you switch — there's no invoice history/PDF

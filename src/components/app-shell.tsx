@@ -36,6 +36,7 @@ import {
   FileSignature,
   Thermometer,
   Star,
+  Handshake,
 } from "lucide-react";
 
 type NavItem = {
@@ -58,6 +59,7 @@ const RETAIL_ONLY_ROLES: UserRole[] = ["owner", "pharmacist", "counter_staff", "
 const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/analytics", label: "Analytics", icon: LineChart, roles: ["owner"] },
+  { href: "/franchise", label: "Franchise", icon: Handshake, roles: ["owner"] },
   { href: "/alerts", label: "Alerts", icon: TriangleAlert },
   { href: "/cold-chain-log", label: "Cold-Chain Log", icon: Thermometer, roles: RETAIL_ONLY_ROLES },
   { href: "/pos", label: "Billing", icon: ScanBarcode, roles: RETAIL_ONLY_ROLES },
