@@ -212,6 +212,29 @@ export async function getAlerts() {
   }
   licenseExpiry.sort((a, b) => a.expiryDate.getTime() - b.expiryDate.getTime());
 
+  // Phase 10.4: tenant-configured GST filing reminder dates — only shown
+  // once within their own leadDays window (or overdue), same "don't clutter
+  // Alerts with things that aren't due yet" behavior as license expiry
+  // above. The actual filing deadline is never computed here; the tenant
+  // configures the date(s) themselves in Settings > Compliance.
+  const gstFilingReminders = (await prisma.gstFilingReminder.findMany({ where: { tenantId } }))
+    .map((r) => {
+      const daysRemaining = Math.ceil((r.dueDate.getTime() - now.getTime()) / 86400000);
+      return {
+        id: r.id,
+        label: r.label,
+        dueDate: r.dueDate,
+        leadDays: r.leadDays,
+        daysRemaining,
+        severity: (daysRemaining < 0 ? "overdue" : daysRemaining <= 3 ? "urgent" : "upcoming") as
+          | "overdue"
+          | "urgent"
+          | "upcoming",
+      };
+    })
+    .filter((r) => r.daysRemaining <= r.leadDays)
+    .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+
   const coldChainSince = new Date(now.getTime() - COLD_CHAIN_LOOKBACK_DAYS * 86400000);
   const coldChainLogs = await prisma.temperatureLog.findMany({
     where: {
@@ -240,6 +263,7 @@ export async function getAlerts() {
     nearExpiryWindowDays: tenant.nearExpiryWindowDays,
     licenseExpiry,
     licenseExpiryWindowDays: tenant.licenseExpiryWindowDays,
+    gstFilingReminders,
     coldChainAlerts,
     coldChainMinC: COLD_CHAIN_MIN_C,
     coldChainMaxC: COLD_CHAIN_MAX_C,

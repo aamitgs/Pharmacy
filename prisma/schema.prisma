@@ -118,6 +118,8 @@ model Tenant {
   franchiseMembership FranchiseMember?
   franchiseMembersOwned FranchiseMember[] @relation("FranchiseMemberOwnerTenant")
 
+  gstFilingReminders GstFilingReminder[]
+
   @@map("tenants")
 }
 
@@ -1721,4 +1723,28 @@ model InteractionRule {
   createdAt    DateTime            @default(now())
 
   @@map("interaction_rules")
+}
+
+// ---------------------------------------------------------------------------
+// Proactive compliance nudges — Phase 10.4
+// ---------------------------------------------------------------------------
+
+// A tenant-configured GST filing reminder date, per the phase spec's
+// explicit instruction: the actual filing deadline is never computed from
+// GST rules here (filing cadence/jurisdiction specifics vary too much) —
+// the tenant just types in the date(s) that matter to them, with how many
+// days ahead of each one to start nudging. Surfaced on the dashboard the
+// same way the existing (Phase 3) license-expiry reminder already is.
+model GstFilingReminder {
+  id        String   @id @default(cuid())
+  tenantId  String
+  label     String
+  dueDate   DateTime
+  leadDays  Int      @default(7)
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("gst_filing_reminders")
 }

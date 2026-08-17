@@ -68,6 +68,27 @@ export default async function DashboardPage() {
         </Alert>
       )}
 
+      {data.gstReminderCount > 0 && data.gstReminderSoonest && (
+        <Alert variant={data.gstReminderSoonest.severity === "upcoming" ? "default" : "destructive"}>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>
+            {data.gstReminderCount === 1
+              ? t("gstReminderDueOne")
+              : t("gstReminderDueMany", { count: data.gstReminderCount })}
+          </AlertTitle>
+          <AlertDescription>
+            {data.gstReminderSoonest.label}{" "}
+            {data.gstReminderSoonest.severity === "overdue"
+              ? t("gstReminderOverdue")
+              : t("gstReminderDueIn", { days: data.gstReminderSoonest.daysRemaining })}{" "}
+            <Link href="/alerts" className="underline underline-offset-2">
+              {t("review")}
+            </Link>
+            .
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="grid grid-cols-3 gap-4 lg:grid-cols-6">
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">

@@ -21,6 +21,7 @@ export default async function AlertsPage() {
     nearExpiryWindowDays,
     licenseExpiry,
     licenseExpiryWindowDays,
+    gstFilingReminders,
     coldChainAlerts,
     coldChainMinC,
     coldChainMaxC,
@@ -93,6 +94,63 @@ export default async function AlertsPage() {
                 <TableRow>
                   <TableCell colSpan={canEdit ? 6 : 5} className="h-20 text-center text-muted-foreground">
                     No license renewals due within the window.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-sm font-medium">
+          GST filing reminders{" "}
+          <span className="text-muted-foreground">({gstFilingReminders.length})</span>
+        </h2>
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Filing</TableHead>
+                <TableHead>Due date</TableHead>
+                <TableHead>Status</TableHead>
+                {canEdit && <TableHead className="w-32" />}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {gstFilingReminders.length ? (
+                gstFilingReminders.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="font-medium">{row.label}</TableCell>
+                    <TableCell className="whitespace-nowrap text-sm">{format(row.dueDate, "dd MMM yyyy")}</TableCell>
+                    <TableCell>
+                      {row.severity === "overdue" ? (
+                        <Badge className="gap-1 bg-destructive/10 text-destructive hover:bg-destructive/10">
+                          <TriangleAlert className="h-3 w-3" /> Overdue
+                        </Badge>
+                      ) : row.severity === "urgent" ? (
+                        <Badge className="gap-1 bg-destructive/10 text-destructive hover:bg-destructive/10">
+                          <TriangleAlert className="h-3 w-3" /> {row.daysRemaining}d left
+                        </Badge>
+                      ) : (
+                        <Badge className="gap-1 bg-warning/20 text-warning-foreground hover:bg-warning/20">
+                          <TriangleAlert className="h-3 w-3" /> {row.daysRemaining}d left
+                        </Badge>
+                      )}
+                    </TableCell>
+                    {canEdit && (
+                      <TableCell>
+                        <Button asChild size="sm" variant="outline">
+                          <Link href="/settings">Manage</Link>
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={canEdit ? 4 : 3} className="h-20 text-center text-muted-foreground">
+                    No GST filing reminders due.
                   </TableCell>
                 </TableRow>
               )}

@@ -41,6 +41,8 @@ export async function getDashboardData() {
     pharmacyName: tenant.pharmacyName,
     licenseExpiryCount: alerts.licenseExpiry.length,
     licenseExpirySoonest: alerts.licenseExpiry[0] ?? null,
+    gstReminderCount: alerts.gstFilingReminders.length,
+    gstReminderSoonest: alerts.gstFilingReminders[0] ?? null,
     onboarding: { hasItems: itemCount > 0, hasSale: invoiceCount > 0 },
     pendingRefillRequestCount,
   };

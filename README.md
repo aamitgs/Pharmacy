@@ -1400,6 +1400,35 @@ complete," confirmed the dialog closed and didn't reappear on a fresh page
 load, then logged in as the Owner and confirmed the Staff list showed
 "Certified" for that account.
 
+### Proactive compliance nudges
+
+A tenant-configured GST filing reminder, extending the existing Alerts/
+dashboard pattern the way license expiry already established in Phase
+3 — not a new alerts surface, per the working instructions.
+
+- **`GstFilingReminder`** — a tenant types in a label (e.g. "GSTR-3B —
+  Sep"), a due date, and how many days ahead of it to start nudging
+  (default 7). Deliberately never computes an actual GST deadline from tax
+  rules anywhere in the app — filing cadence and jurisdiction specifics
+  vary too much to guess, per the phase's explicit instruction (confirmed
+  with the user before building, alongside the interaction-rule seed
+  source).
+- **Settings > Compliance** gained a management UI right below the
+  existing license-renewal-window setting: add a reminder, see the full
+  list, delete ones no longer needed.
+- **Alerts screen** gained a "GST filing reminders" section (same table
+  shape as the existing License renewals section) and the **dashboard**
+  gained a matching overdue/urgent/upcoming banner for the soonest one —
+  both only surface a reminder once it's within its own configured lead
+  window or already overdue, exactly mirroring how license expiry already
+  behaves.
+
+Verified live against a real running instance: confirmed no GST banner
+appears with nothing configured, added a reminder 3 days out with a
+7-day lead time from Settings > Compliance, confirmed it immediately
+appeared on both the dashboard and the Alerts screen, then deleted it via
+the Settings UI and confirmed it disappeared from both.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,

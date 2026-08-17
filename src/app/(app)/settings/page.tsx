@@ -5,6 +5,7 @@ import { canEditItemMaster, canManageCompliance, canManageUsers } from "@/lib/rb
 import { getBackupStatus } from "@/lib/actions/backup";
 import { getCloudBackupInfo } from "@/lib/actions/cloud-backup";
 import { getLicenseExpiryWindow } from "@/lib/actions/branch-settings";
+import { listGstFilingReminders } from "@/lib/actions/gst-reminders";
 import { getBillingInfo } from "@/lib/actions/subscription";
 import { getBrandingInfo } from "@/lib/actions/branding";
 import { getApiAccessInfo } from "@/lib/actions/api-keys";
@@ -45,11 +46,12 @@ export default async function SettingsPage() {
 
   const canReminders = session.user.role === "owner";
 
-  const [backupStatus, cloudBackupInfo, user, licenseWindow, billing, branding, apiAccess, wards, staff, branches, refillReminders, feedbackSettings] = await Promise.all([
+  const [backupStatus, cloudBackupInfo, user, licenseWindow, gstReminders, billing, branding, apiAccess, wards, staff, branches, refillReminders, feedbackSettings] = await Promise.all([
     getBackupStatus(),
     canBackup ? getCloudBackupInfo() : Promise.resolve(null),
     prisma.user.findUniqueOrThrow({ where: { id: session.user.id } }),
     canCompliance ? getLicenseExpiryWindow() : Promise.resolve(null),
+    canCompliance ? listGstFilingReminders() : Promise.resolve([]),
     canBilling ? getBillingInfo() : Promise.resolve(null),
     canBilling ? getBrandingInfo() : Promise.resolve(null),
     canBilling ? getApiAccessInfo() : Promise.resolve(null),
@@ -107,7 +109,7 @@ export default async function SettingsPage() {
         </TabsContent>
         {canCompliance && licenseWindow && (
           <TabsContent value="compliance" className="pt-4">
-            <CompliancePanel initial={licenseWindow} />
+            <CompliancePanel initial={licenseWindow} initialGstReminders={gstReminders} />
           </TabsContent>
         )}
         {canBilling && branding && (
