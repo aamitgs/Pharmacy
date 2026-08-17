@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "@/generated/prisma/client";
+import { PrismaClient, Prisma } from "@/generated/prisma/client";
+import { logWarn } from "@/lib/logger";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -8,6 +9,16 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+
+/**
+ * Phase 11.4: slow-query visibility. Prisma's own `query` log event carries
+ * `duration` (ms) and the parameterized SQL text — never the bound values
+ * (those are a separate `params` field, which is NOT read here, since they
+ * can carry tenant/patient/customer data). Anything over the threshold is
+ * a real "APM data, not a guess" signal for the report/analytics screens
+ * this phase is meant to audit for N+1 queries and missing indexes.
+ */
+const SLOW_QUERY_THRESHOLD_MS = Number(process.env.SLOW_QUERY_THRESHOLD_MS ?? 500);
 
 /**
  * Explicit tenant override for the handful of code paths that run outside a
@@ -41,8 +52,22 @@ export const basePrisma =
   globalForPrisma.basePrisma ??
   new PrismaClient({
     adapter,
-    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
+    log: [
+      ...((process.env.NODE_ENV === "development"
+        ? ["error", "warn"]
+        : ["error"]) satisfies Prisma.LogLevel[]),
+      { emit: "event", level: "query" },
+    ],
   });
+
+// `$on`'s event/type overload is keyed off the log config's own generic,
+// which the `globalForPrisma.basePrisma ?? new PrismaClient(...)` fallback
+// above widens back to plain PrismaClient — the "as never" cast is Prisma's
+// own documented workaround for this exact global-singleton-cache pattern.
+basePrisma.$on("query" as never, (event: Prisma.QueryEvent) => {
+  if (event.duration < SLOW_QUERY_THRESHOLD_MS) return;
+  logWarn("Slow query", { action: "db.slow_query", durationMs: event.duration, query: event.query });
+});
 
 async function resolveTenantId(): Promise<string | undefined> {
   const explicit = tenantContext.getStore();

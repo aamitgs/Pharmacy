@@ -56,9 +56,20 @@ const STALE_ACTIVITY_DAYS = 14;
  * (a server action, not a component) rather than in the page component,
  * since React Compiler's purity analysis forbids calling Date.now()
  * during a component's render.
+ *
+ * Phase 11.4: the AuditLog groupBy below is bounded to a recent window —
+ * found via code audit, not guessed — since AuditLog is the one table in
+ * this schema guaranteed to grow unboundedly (every user action, every
+ * tenant, forever), and this list is loaded on every admin page view. A
+ * tenant with no activity in the window falls back to "No activity yet"
+ * in the UI, which is still an accurate churn signal for a tenant that
+ * quiet for that long.
  */
+const LAST_ACTIVITY_WINDOW_DAYS = 90;
+
 export async function listTenantsForAdmin(query?: string) {
   await requireSuperAdmin();
+  const activitySince = new Date(Date.now() - LAST_ACTIVITY_WINDOW_DAYS * 86400000);
   const [tenants, lastActivity] = await Promise.all([
     withBypass((tx) =>
       tx.tenant.findMany({
@@ -73,7 +84,13 @@ export async function listTenantsForAdmin(query?: string) {
         take: 200,
       })
     ),
-    withBypass((tx) => tx.auditLog.groupBy({ by: ["tenantId"], _max: { createdAt: true } })),
+    withBypass((tx) =>
+      tx.auditLog.groupBy({
+        by: ["tenantId"],
+        where: { createdAt: { gte: activitySince } },
+        _max: { createdAt: true },
+      })
+    ),
   ]);
   const lastActivityByTenant = new Map(lastActivity.map((row) => [row.tenantId, row._max.createdAt]));
   const staleActivityCutoff = Date.now() - STALE_ACTIVITY_DAYS * 86400000;
