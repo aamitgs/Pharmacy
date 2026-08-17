@@ -1596,6 +1596,54 @@ activity" column showed relative timestamps and flagged the stale one,
 and confirmed the tenant detail page's Usage card rendered real active-
 user/invoice/storage/API-volume numbers matching the seeded data.
 
+### APM / performance monitoring
+
+Request latency tracing is already live the moment `SENTRY_DSN` is set —
+Next.js instruments App Router rendering/route handlers with OpenTelemetry
+spans itself ("we already instrumented Next.js itself" per Next's own
+OpenTelemetry guide), and `Sentry.init()` in `src/instrumentation.ts`
+(Phase 11.1) registers as that trace's exporter once initialized, at the
+`tracesSampleRate` already configured there. Nothing further to wire up in
+code; enabling it in production is the same one-line env var as the rest
+of Phase 11.1.
+
+**Slow-query logging** (`src/lib/prisma.ts`) — Prisma's own `query` log
+event carries `duration` (ms) and the parameterized SQL text on every
+query that runs through `basePrisma` (which every query in the app goes
+through — both the tenant-scoped extension and the Super-Admin console's
+bypass path share this one client). Anything over
+`SLOW_QUERY_THRESHOLD_MS` (default 500ms) gets a structured `logWarn`
+tagged `action: "db.slow_query"` with the duration and query text — never
+the bound parameter values (those are a separate `params` field Prisma
+emits, deliberately not read here, since they can carry tenant/patient/
+customer data).
+
+**N+1 / missing-index audit** — a systematic pass over every report and
+analytics action (`analytics.ts`, `dashboard.ts`, `discount-report.ts`,
+`margin-movers.ts`, `reports.ts`, plus the Super-Admin console's own
+`admin.ts`) against the schema's actual `@@index` declarations found the
+report/analytics screens already in solid shape: no query-per-iteration
+loops anywhere, and the composite indexes that exist
+(`SalesInvoice(tenantId, invoiceDate)`, `Grn(tenantId, receivedAt)`,
+`PurchaseReturn(tenantId, returnDate)`, `AuditLog(tenantId, createdAt)`)
+line up with what those screens actually filter/order on. It did surface
+one real issue, in this phase's own new code: `listTenantsForAdmin`'s
+`AuditLog.groupBy` (Phase 11.3, for the "Last activity" column) had no
+date filter at all — since AuditLog is the one table in this schema
+guaranteed to grow unboundedly, that groupBy was scanning the *entire*
+table across *all* tenants on every Super-Admin page load. Fixed by
+bounding it to a 90-day window (`LAST_ACTIVITY_WINDOW_DAYS`); a tenant
+quiet longer than that now shows "No activity yet" instead of a stale
+date, which is still an accurate signal for a tenant that far gone.
+
+Verified live: forced `SLOW_QUERY_THRESHOLD_MS=0` against a real running
+instance and confirmed structured slow-query log lines appeared with
+duration and parameterized SQL (no bound values) for real queries the
+admin console issued; confirmed the default 500ms threshold produces zero
+log lines under normal traffic (not spammy); re-verified the Super-Admin
+tenant list and usage card both still render correctly after the
+`listTenantsForAdmin` fix.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,
