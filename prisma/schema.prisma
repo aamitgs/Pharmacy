@@ -102,6 +102,8 @@ model Tenant {
 
   rateContracts RateContract[]
 
+  temperatureLogs TemperatureLog[]
+
   @@map("tenants")
 }
 
@@ -208,6 +210,8 @@ model Branch {
 
   wards Ward[]
 
+  temperatureLogs TemperatureLog[]
+
   @@index([tenantId])
   @@map("branches")
 }
@@ -237,6 +241,11 @@ model Item {
   unit          String        @default("unit")
   packSize      String?
   reorderLevel  Int           @default(10)
+  // Phase 9: flags an item as needing cold-chain storage (vaccines,
+  // insulin, etc.) — TemperatureLog entries are recorded per branch (the
+  // storage unit), not per item; this flag is what decides whether an
+  // out-of-range reading is worth surfacing as an alert at all.
+  requiresColdChain Boolean @default(false)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -619,6 +628,32 @@ model RateContract {
   @@map("rate_contracts")
 }
 
+/**
+ * Phase 9: manual cold-chain temperature reading for one branch's storage
+ * unit (fridge) — not per item. A branch may have items flagged
+ * `requiresColdChain`; readings outside the standard 2-8°C vaccine/pharma
+ * cold-chain range surface as an out-of-range alert on the Alerts screen
+ * (src/lib/actions/alerts.ts). No IoT/sensor integration — entries are
+ * typed in by staff, per the phase spec's explicit "manual entry only".
+ */
+model TemperatureLog {
+  id                String   @id @default(cuid())
+  tenantId          String
+  branchId          String
+  temperatureCelsius Decimal @db.Decimal(5, 2)
+  recordedAt        DateTime @default(now())
+  recordedByUserId  String
+  note              String?
+
+  tenant       Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch       Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  recordedBy   User   @relation(fields: [recordedByUserId], references: [id])
+
+  @@index([tenantId])
+  @@index([branchId, recordedAt])
+  @@map("temperature_logs")
+}
+
 model Doctor {
   id             String   @id @default(cuid())
   tenantId       String
@@ -913,6 +948,8 @@ model User {
   cloudBackupConnectionsMade CloudBackupConnection[]
 
   pushSubscriptions PushSubscription[]
+
+  temperatureLogsRecorded TemperatureLog[]
 
   @@unique([tenantId, email])
   @@index([tenantId])

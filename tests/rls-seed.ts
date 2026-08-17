@@ -366,6 +366,17 @@ export async function seedTenantSlice(suffix: string) {
       },
     });
 
+    // Phase 9: cold-chain temperature log fixture.
+    const temperatureLog = await tx.temperatureLog.create({
+      data: {
+        id: `templog-${suffix}`,
+        tenantId: tenant.id,
+        branchId: branch.id,
+        temperatureCelsius: 5,
+        recordedByUserId: owner.id,
+      },
+    });
+
     // Phase 9: customer portal fixtures.
     const customerOtp = await tx.customerOtp.create({
       data: {
@@ -444,6 +455,7 @@ export async function seedTenantSlice(suffix: string) {
       refillRequestId: refillRequest.id,
       pushSubscriptionId: pushSubscription.id,
       rateContractId: rateContract.id,
+      temperatureLogId: temperatureLog.id,
     };
   });
 }

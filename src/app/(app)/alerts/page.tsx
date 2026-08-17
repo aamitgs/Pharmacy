@@ -19,6 +19,9 @@ export default async function AlertsPage() {
     nearExpiryWindowDays,
     licenseExpiry,
     licenseExpiryWindowDays,
+    coldChainAlerts,
+    coldChainMinC,
+    coldChainMaxC,
   } = await getAlerts();
   const canEdit = session?.user.role === "owner" || session?.user.role === "pharmacist";
 
@@ -305,6 +308,54 @@ export default async function AlertsPage() {
                 <TableRow>
                   <TableCell colSpan={5} className="h-20 text-center text-muted-foreground">
                     No batches expiring within the window.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium">
+            Cold-chain temperature{" "}
+            <span className="text-muted-foreground">
+              ({coldChainAlerts.length}) — readings outside {coldChainMinC}–{coldChainMaxC}°C in the last 7 days
+            </span>
+          </h2>
+          <Button asChild size="sm" variant="outline">
+            <Link href="/cold-chain-log">Log a reading</Link>
+          </Button>
+        </div>
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Branch</TableHead>
+                <TableHead className="text-right">Temperature</TableHead>
+                <TableHead>Recorded</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {coldChainAlerts.length ? (
+                coldChainAlerts.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell className="font-medium">{c.branchName}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      <Badge className="gap-1 bg-destructive/10 text-destructive hover:bg-destructive/10">
+                        <TriangleAlert className="h-3 w-3" /> {c.temperatureCelsius.toFixed(1)}°C
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      {format(new Date(c.recordedAt), "dd MMM yyyy, h:mm a")}
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={3} className="h-20 text-center text-muted-foreground">
+                    No out-of-range readings in the last 7 days.
                   </TableCell>
                 </TableRow>
               )}

@@ -1090,6 +1090,33 @@ correctly taxed off that rate. Also confirmed a non-owner/pharmacist role
 (`counter_staff`) sees neither the "Rate Contracts" nav item nor the page
 itself (blocked server-side, not just hidden).
 
+### Cold-chain temperature tracking
+
+Manual temperature logging for cold-storage units (fridges), with an
+out-of-range alert — no IoT/sensor integration, per the phase spec's
+explicit "manual entry only".
+
+- **`Item.requiresColdChain`** — a checkbox on the item form flagging
+  medicines that need cold storage (vaccines, insulin, etc.).
+- **`TemperatureLog`** — a reading is per *branch* (the storage unit), not
+  per item, recorded on a new `/cold-chain-log` screen (any retail-facing
+  role — counter staff are usually the ones physically checking the
+  fridge). The standard 2–8°C pharma cold-chain range is a fixed constant
+  (`src/lib/cold-chain.ts`), not a per-tenant setting, matching the rest
+  of Alerts' "explainable, no configuration" defaults.
+- **Alerts integration**: a new "Cold-chain temperature" section on the
+  existing Alerts screen surfaces any out-of-range reading from the last 7
+  days, branch-scoped the same way every other Alerts section already is,
+  with a direct link to log a new reading.
+
+Verified live against a real running instance: as a real logged-in
+counter staff session, opened `/cold-chain-log`, recorded a 12.5°C
+reading (out of the 2–8°C range) with a note, confirmed the "out of
+range" toast and badge appeared in the log table, then confirmed the same
+reading surfaced on the Alerts screen's new cold-chain section. Also
+confirmed the item edit form carries the new "Requires cold-chain
+storage" checkbox.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,
@@ -1100,12 +1127,14 @@ analytics, WhatsApp refill reminders, GRN scheme tracking, Tally sync, and
 insurance/TPA cashless billing shipped in Phase 8 (see above, each with
 its own live-verification caveats where a real third-party credential
 wasn't available in this environment); a customer-facing portal, an
-installable owner PWA with push notifications, and rate contract
-management shipped in Phase 9 (see above — a *native* mobile app was
-confirmed skipped in favor of the PWA approach). What's still deliberately
-out of scope: cold-chain tracking, customer feedback capture, and
-franchise/dealer management (all planned for the rest of Phase 9, not yet
-built), marketplace integration (1mg/PharmEasy/Netmeds — explicitly skipped in
+installable owner PWA with push notifications, rate contract management,
+and cold-chain temperature tracking shipped in Phase 9 (see above — a
+*native* mobile app was confirmed skipped in favor of the PWA approach,
+and cold-chain tracking is manual-entry only, no IoT/sensor integration,
+per the phase spec). What's still deliberately out of scope: customer
+feedback capture and franchise/dealer management (both planned for the
+rest of Phase 9, not yet built), marketplace integration
+(1mg/PharmEasy/Netmeds — explicitly skipped in
 Phase 8), a full self-serve SaaS billing-history UI (Settings > Billing
 shows the current plan and lets you switch — there's no invoice history/PDF
 receipts screen), and replacing the explainable statistical approach with

@@ -4,6 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/rbac";
 import { LICENSE_TYPES, type LicenseType } from "@/lib/license-types";
 import { getBranchFilter } from "@/lib/branch-scope";
+import { COLD_CHAIN_MIN_C, COLD_CHAIN_MAX_C } from "@/lib/cold-chain";
+
+// Phase 9: cold-chain out-of-range readings from the last 7 days — long
+// enough to catch a fridge issue that hasn't been re-checked yet, short
+// enough that a stale alert doesn't linger indefinitely once it's fixed
+// and a new in-range reading is logged.
+const COLD_CHAIN_LOOKBACK_DAYS = 7;
 
 const LICENSE_LABELS: Record<LicenseType, string> = {
   retail: "Retail drug license",
@@ -205,6 +212,24 @@ export async function getAlerts() {
   }
   licenseExpiry.sort((a, b) => a.expiryDate.getTime() - b.expiryDate.getTime());
 
+  const coldChainSince = new Date(now.getTime() - COLD_CHAIN_LOOKBACK_DAYS * 86400000);
+  const coldChainLogs = await prisma.temperatureLog.findMany({
+    where: {
+      tenantId,
+      ...branchFilter,
+      recordedAt: { gte: coldChainSince },
+      OR: [{ temperatureCelsius: { lt: COLD_CHAIN_MIN_C } }, { temperatureCelsius: { gt: COLD_CHAIN_MAX_C } }],
+    },
+    include: { branch: { select: { name: true } } },
+    orderBy: { recordedAt: "desc" },
+  });
+  const coldChainAlerts = coldChainLogs.map((l) => ({
+    id: l.id,
+    branchName: l.branch.name,
+    temperatureCelsius: Number(l.temperatureCelsius),
+    recordedAt: l.recordedAt,
+  }));
+
   return {
     lowStock,
     reorderSuggestions,
@@ -215,5 +240,8 @@ export async function getAlerts() {
     nearExpiryWindowDays: tenant.nearExpiryWindowDays,
     licenseExpiry,
     licenseExpiryWindowDays: tenant.licenseExpiryWindowDays,
+    coldChainAlerts,
+    coldChainMinC: COLD_CHAIN_MIN_C,
+    coldChainMaxC: COLD_CHAIN_MAX_C,
   };
 }

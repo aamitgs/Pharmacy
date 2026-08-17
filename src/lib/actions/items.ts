@@ -21,6 +21,7 @@ const itemSchema = z.object({
   unit: z.string().trim().min(1),
   packSize: z.string().trim().optional(),
   reorderLevel: z.coerce.number().int().min(0),
+  requiresColdChain: z.boolean().default(false),
 });
 
 export type ItemInput = z.infer<typeof itemSchema>;

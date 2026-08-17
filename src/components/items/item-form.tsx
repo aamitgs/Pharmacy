@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -30,6 +31,7 @@ const formSchema = z.object({
   unit: z.string().trim().min(1, "Unit is required"),
   packSize: z.string().trim().optional(),
   reorderLevel: z.coerce.number().int().min(0),
+  requiresColdChain: z.boolean().default(false),
 });
 
 // zod v4 gives coerce.number() an `unknown` input type distinct from its
@@ -57,6 +59,7 @@ export function ItemForm({ item }: { item?: PlainItem }) {
       unit: item?.unit ?? "unit",
       packSize: item?.packSize ?? "",
       reorderLevel: item?.reorderLevel ?? 10,
+      requiresColdChain: item?.requiresColdChain ?? false,
     },
   });
 
@@ -143,6 +146,14 @@ export function ItemForm({ item }: { item?: PlainItem }) {
           <Input id="reorderLevel" type="number" {...form.register("reorderLevel")} />
         </div>
       </div>
+
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox
+          checked={form.watch("requiresColdChain")}
+          onCheckedChange={(v) => form.setValue("requiresColdChain", !!v)}
+        />
+        Requires cold-chain storage (2–8°C)
+      </label>
 
       <div className="flex gap-2">
         <Button type="submit" disabled={pending}>

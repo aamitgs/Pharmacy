@@ -34,6 +34,7 @@ import {
   FileHeart,
   RefreshCcw,
   FileSignature,
+  Thermometer,
 } from "lucide-react";
 
 type NavItem = {
@@ -57,6 +58,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/analytics", label: "Analytics", icon: LineChart, roles: ["owner"] },
   { href: "/alerts", label: "Alerts", icon: TriangleAlert },
+  { href: "/cold-chain-log", label: "Cold-Chain Log", icon: Thermometer, roles: RETAIL_ONLY_ROLES },
   { href: "/pos", label: "Billing", icon: ScanBarcode, roles: RETAIL_ONLY_ROLES },
   { href: "/items", label: "Items & Batches", icon: Package },
   { href: "/suppliers", label: "Suppliers", icon: Truck, roles: RETAIL_ONLY_ROLES },
