@@ -51,6 +51,10 @@ model Tenant {
   // platform (portal routing has no other way to resolve which tenant a
   // request is for — see src/app/portal/[slug]).
   portalSlug                    String    @unique
+  // Phase 9: tenant-level kill switch for post-sale WhatsApp feedback
+  // requests — off by default, same "explicit opt-in" convention as
+  // refillRemindersEnabled above.
+  feedbackRequestsEnabled       Boolean   @default(false)
   createdAt                     DateTime  @default(now())
 
   branches      Branch[]
@@ -103,6 +107,8 @@ model Tenant {
   rateContracts RateContract[]
 
   temperatureLogs TemperatureLog[]
+
+  customerFeedback CustomerFeedback[]
 
   @@map("tenants")
 }
@@ -211,6 +217,7 @@ model Branch {
   wards Ward[]
 
   temperatureLogs TemperatureLog[]
+  customerFeedback CustomerFeedback[]
 
   @@index([tenantId])
   @@map("branches")
@@ -350,6 +357,7 @@ model Customer {
   otps            CustomerOtp[]
   refillRequests  RefillRequest[]
   rateContracts   RateContract[]
+  feedback        CustomerFeedback[]
 
   @@index([tenantId])
   @@index([tenantId, phone])
@@ -444,6 +452,7 @@ enum WhatsAppMessageType {
   receipt
   statement
   reminder
+  feedback
 }
 
 enum WhatsAppStatus {
@@ -654,6 +663,37 @@ model TemperatureLog {
   @@map("temperature_logs")
 }
 
+/**
+ * Phase 9: one row per post-sale feedback request — created (with a random
+ * unguessable `token`) when a completed sale triggers a WhatsApp feedback
+ * link, and filled in (`rating`/`comment`/`submittedAt`) if the customer
+ * actually follows the link and submits. The public /feedback/[token]
+ * route is unauthenticated (possession of the link is the only "auth"),
+ * so this is looked up via basePrisma + the RLS bypass flag, the same
+ * pre-login pattern as the customer portal's OTP flow.
+ */
+model CustomerFeedback {
+  id          String    @id @default(cuid())
+  tenantId    String
+  branchId    String
+  invoiceId   String    @unique
+  customerId  String?
+  token       String    @unique
+  rating      Int?
+  comment     String?
+  requestedAt DateTime  @default(now())
+  submittedAt DateTime?
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch   Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  invoice  SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  customer Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, branchId, submittedAt])
+  @@map("customer_feedback")
+}
+
 model Doctor {
   id             String   @id @default(cuid())
   tenantId       String
@@ -749,6 +789,7 @@ model SalesInvoice {
   whatsappLogs            WhatsAppLog[]
   insuranceClaim          InsuranceClaim?
   refillRequests          RefillRequest[]
+  feedback                CustomerFeedback?
 
   @@unique([tenantId, invoiceNo])
   @@index([tenantId, invoiceDate])

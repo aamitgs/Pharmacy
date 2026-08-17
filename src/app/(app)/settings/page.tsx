@@ -25,6 +25,8 @@ import { WardsPanel } from "@/components/settings/wards-panel";
 import { StaffPanel } from "@/components/settings/staff-panel";
 import { RefillRemindersPanel } from "@/components/settings/refill-reminders-panel";
 import { NotificationsPanel } from "@/components/settings/notifications-panel";
+import { FeedbackPanel } from "@/components/settings/feedback-panel";
+import { getFeedbackSettings } from "@/lib/actions/customer-feedback";
 import { Separator } from "@/components/ui/separator";
 
 export default async function SettingsPage() {
@@ -42,7 +44,7 @@ export default async function SettingsPage() {
 
   const canReminders = session.user.role === "owner";
 
-  const [backupStatus, cloudBackupInfo, user, licenseWindow, billing, branding, apiAccess, wards, staff, branches, refillReminders] = await Promise.all([
+  const [backupStatus, cloudBackupInfo, user, licenseWindow, billing, branding, apiAccess, wards, staff, branches, refillReminders, feedbackSettings] = await Promise.all([
     getBackupStatus(),
     canBackup ? getCloudBackupInfo() : Promise.resolve(null),
     prisma.user.findUniqueOrThrow({ where: { id: session.user.id } }),
@@ -54,6 +56,7 @@ export default async function SettingsPage() {
     canManageStaff ? listStaff() : Promise.resolve(null),
     canManageStaff ? listBranches() : Promise.resolve(null),
     canReminders ? getRefillReminderSettings() : Promise.resolve(null),
+    canReminders ? getFeedbackSettings() : Promise.resolve(null),
   ]);
 
   return (
@@ -72,6 +75,7 @@ export default async function SettingsPage() {
           {isHospital && wards && <TabsTrigger value="wards">Wards</TabsTrigger>}
           {canReminders && refillReminders && <TabsTrigger value="reminders">Reminders</TabsTrigger>}
           {canReminders && <TabsTrigger value="notifications">Notifications</TabsTrigger>}
+          {canReminders && feedbackSettings && <TabsTrigger value="feedback">Feedback</TabsTrigger>}
         </TabsList>
         <TabsContent value="backup" className="pt-4">
           <Suspense fallback={null}>
@@ -134,6 +138,11 @@ export default async function SettingsPage() {
         {canReminders && (
           <TabsContent value="notifications" className="pt-4">
             <NotificationsPanel />
+          </TabsContent>
+        )}
+        {canReminders && feedbackSettings && (
+          <TabsContent value="feedback" className="pt-4">
+            <FeedbackPanel initialEnabled={feedbackSettings.enabled} />
           </TabsContent>
         )}
       </Tabs>

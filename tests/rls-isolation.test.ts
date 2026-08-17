@@ -88,6 +88,7 @@ const cases: Case[] = [
   { label: "PushSubscription", aId: () => A.pushSubscriptionId, bId: () => B.pushSubscriptionId, find: (id) => prisma.pushSubscription.findUnique({ where: { id } }) },
   { label: "RateContract", aId: () => A.rateContractId, bId: () => B.rateContractId, find: (id) => prisma.rateContract.findUnique({ where: { id } }) },
   { label: "TemperatureLog", aId: () => A.temperatureLogId, bId: () => B.temperatureLogId, find: (id) => prisma.temperatureLog.findUnique({ where: { id } }) },
+  { label: "CustomerFeedback", aId: () => A.customerFeedbackId, bId: () => B.customerFeedbackId, find: (id) => prisma.customerFeedback.findUnique({ where: { id } }) },
   // Indirect (no direct tenantId column — scoped via EXISTS into parent)
   { label: "Batch (indirect via Item)", aId: () => A.batchId, bId: () => B.batchId, find: (id) => prisma.batch.findUnique({ where: { id } }) },
   { label: "SalesInvoiceItem (indirect via SalesInvoice)", aId: () => A.invoiceItemId, bId: () => B.invoiceItemId, find: (id) => prisma.salesInvoiceItem.findUnique({ where: { id } }) },

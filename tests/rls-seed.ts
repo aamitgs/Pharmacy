@@ -377,6 +377,18 @@ export async function seedTenantSlice(suffix: string) {
       },
     });
 
+    // Phase 9: customer feedback fixture.
+    const customerFeedback = await tx.customerFeedback.create({
+      data: {
+        id: `feedback-${suffix}`,
+        tenantId: tenant.id,
+        branchId: branch.id,
+        invoiceId: invoice.id,
+        customerId: customer.id,
+        token: `feedback-token-${suffix}`,
+      },
+    });
+
     // Phase 9: customer portal fixtures.
     const customerOtp = await tx.customerOtp.create({
       data: {
@@ -456,6 +468,7 @@ export async function seedTenantSlice(suffix: string) {
       pushSubscriptionId: pushSubscription.id,
       rateContractId: rateContract.id,
       temperatureLogId: temperatureLog.id,
+      customerFeedbackId: customerFeedback.id,
     };
   });
 }

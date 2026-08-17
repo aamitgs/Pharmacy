@@ -22,6 +22,7 @@ import { computeCustomerOutstandingBalances } from "@/lib/actions/customers";
 import { runEinvoiceAttempt, runEwayBillAttemptForInvoice } from "@/lib/gsp/engine";
 import { shouldShowPoweredBy } from "@/lib/branding";
 import { listActiveInsuranceProviders } from "@/lib/actions/insurance-providers";
+import { sendFeedbackRequestForInvoice } from "@/lib/actions/customer-feedback";
 
 const REQUIRES_PRESCRIPTION: readonly string[] = ["H", "H1", "X"];
 
@@ -667,6 +668,7 @@ export async function completeSale(input: CompleteSaleInput) {
   // a checkout error.
   void runEinvoiceAttempt(result.id).catch(() => {});
   void runEwayBillAttemptForInvoice(result.id).catch(() => {});
+  void sendFeedbackRequestForInvoice(result.id).catch(() => {});
 
   return { invoiceId: result.id, invoiceNo: result.invoiceNo };
 }

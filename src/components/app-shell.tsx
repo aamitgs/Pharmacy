@@ -35,6 +35,7 @@ import {
   RefreshCcw,
   FileSignature,
   Thermometer,
+  Star,
 } from "lucide-react";
 
 type NavItem = {
@@ -159,6 +160,12 @@ const NAV_ITEMS: NavItem[] = [
     href: "/reports/scheme-benefits",
     label: "Scheme Benefits",
     icon: FileSpreadsheet,
+    roles: ["owner", "pharmacist"],
+  },
+  {
+    href: "/reports/feedback",
+    label: "Customer Feedback",
+    icon: Star,
     roles: ["owner", "pharmacist"],
   },
   {

@@ -1117,6 +1117,48 @@ reading surfaced on the Alerts screen's new cold-chain section. Also
 confirmed the item edit form carries the new "Requires cold-chain
 storage" checkbox.
 
+### Customer feedback capture
+
+A post-sale WhatsApp link asking for a 1-5 rating and an optional
+comment, reusing the existing WhatsApp delivery mechanism, plus an
+owner-facing report.
+
+- **`CustomerFeedback`** — one row per completed sale (once opted in and
+  the customer has a phone on file), created with a random unguessable
+  `token` right after checkout. `completeSale`
+  (`src/lib/actions/pos.ts`) fires `sendFeedbackRequestForInvoice`
+  fire-and-forget, the same "never blocks checkout, keeps running after
+  the response is sent, failures are swallowed" contract already used
+  for e-invoice/e-way bill generation — mirrors `runEinvoiceAttempt`'s
+  own shape (re-fetches everything from the invoice id rather than
+  trusting anything passed in).
+- **Public, unauthenticated link** (`/feedback/[token]`) — possession of
+  the link is the only "auth" a post-sale feedback request has, so the
+  pre-tenant-context lookup uses the same `basePrisma` +
+  `set_config('app.rls_bypass', ...)` pattern as the customer portal's
+  OTP flow. One submission per link — visiting an already-submitted link
+  again shows a "you've already shared your feedback" state instead of
+  the form. Carries the tenant's branding (logo, brand color) in the
+  header, same as the customer portal.
+- **Off by default** — a tenant-level `feedbackRequestsEnabled` kill
+  switch (Settings > Feedback, owner-only), same convention as refill
+  reminders.
+- **Owner-facing report** (`/reports/feedback`, owner/pharmacist) — a
+  rating trend chart, a 1-5 rating distribution, and the raw comments
+  list, filterable by date (`DateRangeFilter`, same component every
+  other report already uses) and implicitly by branch via the app's
+  existing branch-scope switcher, not a separate per-report filter.
+
+Verified live against a real running instance: enabled feedback requests
+for the demo tenant, completed a real sale for a test customer through
+POS as counter staff, recovered the generated feedback token, opened the
+public `/feedback/<token>` link in a fresh unauthenticated browser
+context, submitted a 5-star rating with a comment, confirmed the
+thank-you state, confirmed re-visiting the same link now shows the
+already-submitted state instead of the form, then logged in as the owner
+(through real TOTP MFA) and confirmed the rating and comment appeared
+correctly on the Customer Feedback report.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,
@@ -1128,12 +1170,12 @@ insurance/TPA cashless billing shipped in Phase 8 (see above, each with
 its own live-verification caveats where a real third-party credential
 wasn't available in this environment); a customer-facing portal, an
 installable owner PWA with push notifications, rate contract management,
-and cold-chain temperature tracking shipped in Phase 9 (see above — a
-*native* mobile app was confirmed skipped in favor of the PWA approach,
-and cold-chain tracking is manual-entry only, no IoT/sensor integration,
-per the phase spec). What's still deliberately out of scope: customer
-feedback capture and franchise/dealer management (both planned for the
-rest of Phase 9, not yet built), marketplace integration
+cold-chain temperature tracking, and customer feedback capture shipped in
+Phase 9 (see above — a *native* mobile app was confirmed skipped in favor
+of the PWA approach, and cold-chain tracking is manual-entry only, no
+IoT/sensor integration, per the phase spec). What's still deliberately
+out of scope: franchise/dealer management (planned for the rest of
+Phase 9, not yet built), marketplace integration
 (1mg/PharmEasy/Netmeds — explicitly skipped in
 Phase 8), a full self-serve SaaS billing-history UI (Settings > Billing
 shows the current plan and lets you switch — there's no invoice history/PDF

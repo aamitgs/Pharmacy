@@ -37,14 +37,18 @@ export const authConfig = {
         pathname.startsWith("/api/auth") ||
         pathname.startsWith("/api/webhooks") ||
         // The Super-Admin console (/admin/*), the public v1 API
-        // (/api/v1/*), and the customer portal (/portal/*) all authenticate
+        // (/api/v1/*), the customer portal (/portal/*), and the public
+        // post-sale feedback links (/feedback/*) all authenticate
         // themselves independently of this tenant NextAuth session — a
-        // separate signed cookie for admin, an API key for /api/v1, and a
+        // separate signed cookie for admin, an API key for /api/v1, a
         // separate signed cookie (scoped per portal path) for portal
-        // customers — so the tenant-session gate must not intercept them.
+        // customers, and mere possession of an unguessable token for a
+        // feedback link — so the tenant-session gate must not intercept
+        // any of them.
         pathname.startsWith("/admin") ||
         pathname.startsWith("/api/v1") ||
-        pathname.startsWith("/portal");
+        pathname.startsWith("/portal") ||
+        pathname.startsWith("/feedback");
       if (isPublic) return true;
       if (!isLoggedIn) return false;
 
