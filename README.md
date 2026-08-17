@@ -1479,6 +1479,123 @@ screens the phase's own acceptance criteria exercise were translated;
 extending it further is additive (new keys + a `useTranslations` call),
 not a re-architecture.
 
+## Phase 11: Observability, production hardening & visual identity pass
+
+Two things assumed as part of a production-ready system but never
+actually built: real operator-facing observability (so a production issue
+surfaces before a tenant has to report it), and a deliberate visual
+identity/polish pass. No new business features — this phase hardens what
+Phases 1–10 already shipped. Built in the order the phase's own working
+instructions specified: observability first (no dependency on the visual
+work, and higher priority once real tenants are live).
+
+### Error tracking (Sentry/GlitchTip)
+
+[@sentry/nextjs](https://docs.sentry.io/platforms/javascript/guides/nextjs/)
+wired directly against this Next.js fork's own instrumentation
+conventions (`src/instrumentation.ts`'s `register()`/`onRequestError`,
+`src/instrumentation-client.ts`) rather than the wizard-generated
+`withSentryConfig()` wrapper — a more verifiable fit for a heavily
+customized Next fork. GlitchTip (self-hosted, same ingestion protocol as
+Sentry.io) works with the exact same SDK code — only the `SENTRY_DSN`
+value changes, so no separate package or code path is needed to support
+self-hosting it instead.
+
+- **`SENTRY_DSN`/`NEXT_PUBLIC_SENTRY_DSN`** — opt-in, same convention as
+  `GUPSHUP_API_KEY`/`RAZORPAY_KEY_ID`/etc: unset, the feature is simply
+  disabled, nothing crashes.
+- **Tenant/user tagging** — rather than relying on Sentry's automatic
+  per-request async-context scope isolation (the same category of
+  mechanism the Phase 9 franchise-rollup lesson already flagged as
+  unreliable in this app's RSC rendering), `src/lib/rbac.ts`'s
+  `requireSession()` — the single choke point nearly every server action
+  already calls first — explicitly tags Sentry's current scope with
+  `tenantId`/`userId`. Any later exception in the same request carries
+  that context automatically, without touching every action file.
+- **PII scrubbing** (`src/lib/observability/scrub.ts`) — a shared
+  `beforeSend` hook (used by both the server and client `Sentry.init()`
+  calls) that redacts 10-digit phone numbers and email-shaped substrings
+  from exception messages and breadcrumbs, strips request cookies/headers
+  entirely, and strips local variables from stack frames. `sendDefaultPii`
+  is explicitly pinned to `false`.
+- **`reportError()`** (`src/lib/observability/report-error.ts`) — for the
+  fire-and-forget paths that deliberately swallow their own errors by
+  design (e-invoice/e-way bill generation, WhatsApp sends, scheduled cron
+  jobs — the established "never blocks checkout, failures are swallowed"
+  pattern from earlier phases). These never reach `onRequestError` since
+  they never become an uncaught exception, so `reportError()` is called
+  explicitly at the point each one is already being handled. Its context
+  argument must be IDs only (tenantId, invoiceId, customerId) — never a
+  raw invoice/customer/patient record — documented as a call-site
+  discipline requirement in the function's own comment; the `beforeSend`
+  scrub is a safety net, not a substitute for that discipline. Wired into:
+  GSP e-invoice/e-way bill generation (`src/lib/gsp/engine.ts`), the
+  scheduled backup/refill-reminder/push-notification cron routes (their
+  `catch` blocks previously discarded the error entirely — now they
+  report and log it before falling back to the same safe result).
+- **Alerting for error-rate spikes** is a dashboard-side configuration
+  step in whichever Sentry/GlitchTip project the DSN points at (Alerts →
+  new alert rule → "number of errors" over a time window) — nothing to
+  provision from application code, since it depends on a live account
+  that doesn't exist in this development environment.
+
+### Structured logging
+
+**pino** (`src/lib/logger.ts`), deliberately configured without
+`pino.transport()` — a known pino/bundler worker-thread incompatibility
+with Turbopack — so it always writes plain JSON to stdout; pretty-printing
+in development is a CLI convention (`npm run dev | npx pino-pretty`), not
+an in-process transport.
+
+- **`logError`/`logWarn`/`logInfo`** all take a `LogContext` requiring
+  `action: string` and allowing `tenantId`/`userId`/other fields, so every
+  log line is queryable by tenant, user, or action — the acceptance
+  criteria's actual requirement — without inventing a bespoke schema.
+- **This is not the AuditLog.** AuditLog (since Phase 1) remains the
+  business-facing, compliance-facing record of who-did-what; this logging
+  layer is operational/debugging-only and is never treated as a
+  compliance record — stated explicitly in `logger.ts`'s own comments so
+  the distinction doesn't erode over time.
+- A full-codebase sweep for ad-hoc `console.*` calls (this phase's
+  literal framing for what to replace) found none — the actual gap was
+  several genuinely *silent* error paths (bare `catch {}` blocks in the
+  backup/refill-reminder/push-notification cron routes, and the WhatsApp
+  provider's failure branches) that discarded error detail entirely.
+  Those were instrumented with both `logError`/`logWarn` and
+  `reportError()` together in one pass, rather than sweeping the codebase
+  twice for what amounts to the same call sites.
+
+### Per-tenant usage metrics (Super-Admin console)
+
+Extends the Phase 6 Super-Admin console — operator-facing only, never
+surfaced to the tenant itself, per the phase's explicit
+out-of-scope note.
+
+- **Tenant list** (`/admin`) gained a "Last activity" column — the most
+  recent `AuditLog` entry per tenant, computed with one `groupBy` query
+  across the whole list rather than a per-tenant N+1 loop (the list can
+  show up to 200 rows). A tenant idle 14+ days is visibly flagged
+  (`isActivityStale`, computed server-side in `listTenantsForAdmin()`
+  since React Compiler's purity analysis forbids calling `Date.now()`
+  during a component's render) — a churn-risk signal visible at a glance
+  without opening every tenant.
+- **Tenant detail page** (`/admin/tenants/[id]`) gained a Usage card:
+  active users in the last 30 days (distinct `AuditLog` users — reusing
+  the existing compliance table rather than building new session
+  tracking), invoices processed today/this month, storage used (real
+  on-disk bytes under that tenant's prescription-upload directory — this
+  app's documented single-process self-hosted deployment means local disk
+  genuinely is the storage backend, so this is a real measurement, not an
+  estimate), and API call volume (`ApiKey.requestCount`, a new running
+  counter incremented alongside the existing `lastUsedAt` update on every
+  authenticated API request).
+
+Verified live against a real running instance: seeded multiple tenants
+with varying AuditLog activity, confirmed the tenant list's "Last
+activity" column showed relative timestamps and flagged the stale one,
+and confirmed the tenant detail page's Usage card rendered real active-
+user/invoice/storage/API-volume numbers matching the seeded data.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,
