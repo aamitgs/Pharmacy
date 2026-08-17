@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import { SignOutButton } from "@/components/sign-out-button";
 import { BranchSwitcher } from "@/components/branch-switcher";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { StaffWalkthrough } from "@/components/onboarding/staff-walkthrough";
+import { CERTIFIABLE_ROLES } from "@/lib/certification";
 import { ServiceWorkerRegister } from "@/components/pwa/sw-register";
 import {
   LayoutDashboard,
@@ -216,6 +218,9 @@ export function AppShell({
     showPoweredBy?: boolean;
     // Phase 7: hospital-only nav items only render when this is 'hospital'.
     tenantType?: string;
+    // Phase 10.3: null/undefined -> the guided walkthrough hasn't been
+    // completed yet.
+    certifiedAt?: Date | null;
   };
   branchScope: {
     branches: { id: string; name: string }[];
@@ -233,9 +238,12 @@ export function AppShell({
       (!item.roles || item.roles.includes(user.role)) && (!item.hospitalOnly || user.tenantType === "hospital")
   );
 
+  const needsCertification = CERTIFIABLE_ROLES.has(user.role) && !user.certifiedAt;
+
   return (
     <div className="flex min-h-screen">
       <ServiceWorkerRegister />
+      <StaffWalkthrough open={needsCertification} />
       <aside className="flex w-56 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground print:hidden">
         <div className="flex h-12 items-center gap-2 border-b px-4">
           {user.logoUrl && (

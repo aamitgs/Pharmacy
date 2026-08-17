@@ -26,6 +26,7 @@ export async function listStaff() {
     name: u.name,
     email: u.email,
     role: u.role,
+    certifiedAt: u.certifiedAt,
     wardAssignments: u.wardAssignments.map((wa) => ({ wardId: wa.wardId, wardName: wa.ward.name })),
   }));
 }

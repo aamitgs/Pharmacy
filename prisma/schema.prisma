@@ -1044,6 +1044,11 @@ model User {
   // adding a messages/<locale>.json file and this column accepting the
   // new value, not touching component code.
   locale       String   @default("en")
+  // Phase 10.3: set once a new Counter Staff/Pharmacist user completes the
+  // guided in-app walkthrough on first login — a lightweight signal for
+  // the Owner (surfaced on the staff list), not a training record with any
+  // enforcement behind it.
+  certifiedAt  DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

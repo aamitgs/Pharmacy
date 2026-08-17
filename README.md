@@ -1368,6 +1368,38 @@ started a new sale for the same customer with a different Paracetamol
 brand, and confirmed the "sold recently" recent-purchase-history warning
 appeared; confirmed an empty/low-risk cart shows no banner at all.
 
+### Staff training/certification flow
+
+A single guided walkthrough, not an LMS, per the phase's explicit
+"heavyweight LMS" out-of-scope note — four short steps, no videos, no
+quizzes, no multi-module course structure.
+
+- **`User.certifiedAt`** — set once a Counter Staff/Pharmacist/Ward
+  Pharmacist user completes the walkthrough. Pure signal, no enforcement:
+  nothing else in the app checks or gates on this value.
+- **`StaffWalkthrough`** — a 4-step dialog (item search & billing, applying
+  a discount correctly, handling a Schedule H sale, running a manual
+  backup) that opens automatically on first login for a certifiable role
+  whose `certifiedAt` is still null, rendered from `AppShell` so it shows
+  on whichever page they land on first. "Skip for now" just closes it for
+  that session — it reappears next login until they reach the end and
+  click "Mark as complete", which is the only thing that actually sets
+  `certifiedAt`. An Owner or Ward Nurse never sees it: an Owner set the
+  system up themselves, and a Ward Nurse's job doesn't touch
+  billing/discounts/Schedule H.
+- **Owner-facing indicator** — the existing Staff panel (Settings > Staff)
+  gained a "Certified" column, showing a checkmark (with the completion
+  date on hover) for certifiable roles, "Not yet" otherwise, and "—" for
+  roles the walkthrough was never shown to.
+
+Verified live against a real running instance: created a new Counter
+Staff account, logged in as them (no MFA — Counter Staff isn't an
+MFA-required role), confirmed the walkthrough opened automatically on
+landing on the dashboard, stepped through all four steps, clicked "Mark as
+complete," confirmed the dialog closed and didn't reappear on a fresh page
+load, then logged in as the Owner and confirmed the Staff list showed
+"Certified" for that account.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,

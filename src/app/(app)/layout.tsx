@@ -10,10 +10,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!session?.user) redirect("/login");
   if (session.user.mfaSetupRequired) redirect("/mfa-setup");
 
-  const [tenant, branchScope, showPoweredBy] = await Promise.all([
+  const [tenant, branchScope, showPoweredBy, currentUser] = await Promise.all([
     prisma.tenant.findUnique({ where: { id: session.user.tenantId } }),
     resolveSelectedBranch(session.user.tenantId, session.user.role),
     shouldShowPoweredBy(session.user.tenantId),
+    prisma.user.findUnique({ where: { id: session.user.id }, select: { certifiedAt: true } }),
   ]);
 
   return (
@@ -26,6 +27,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         primaryColor: tenant?.primaryColor ?? null,
         showPoweredBy,
         tenantType: tenant?.tenantType,
+        certifiedAt: currentUser?.certifiedAt ?? null,
       }}
       branchScope={branchScope}
     >

@@ -10,7 +10,9 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2 } from "lucide-react";
+import { Loader2, CheckCircle2 } from "lucide-react";
+import { format } from "date-fns";
+import { CERTIFIABLE_ROLES } from "@/lib/certification";
 
 const ROLE_LABELS: Record<string, string> = {
   owner: "Owner",
@@ -25,6 +27,7 @@ interface StaffRow {
   name: string;
   email: string;
   role: string;
+  certifiedAt: Date | null;
   wardAssignments: { wardId: string; wardName: string }[];
 }
 
@@ -71,6 +74,7 @@ export function StaffPanel({
             name: name.trim(),
             email: email.trim(),
             role,
+            certifiedAt: null,
             wardAssignments: wards.filter((w) => wardIds.includes(w.id)).map((w) => ({ wardId: w.id, wardName: w.name })),
           },
         ]);
@@ -169,6 +173,7 @@ export function StaffPanel({
             <TableHead>Name</TableHead>
             <TableHead>Email</TableHead>
             <TableHead>Role</TableHead>
+            <TableHead>Certified</TableHead>
             {isHospital && <TableHead>Wards</TableHead>}
           </TableRow>
         </TableHeader>
@@ -179,6 +184,17 @@ export function StaffPanel({
               <TableCell>{u.email}</TableCell>
               <TableCell>
                 <Badge variant="outline">{ROLE_LABELS[u.role] ?? u.role}</Badge>
+              </TableCell>
+              <TableCell>
+                {!CERTIFIABLE_ROLES.has(u.role) ? (
+                  <span className="text-xs text-muted-foreground">—</span>
+                ) : u.certifiedAt ? (
+                  <span className="flex items-center gap-1 text-xs text-success" title={format(u.certifiedAt, "dd MMM yyyy")}>
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Certified
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Not yet</span>
+                )}
               </TableCell>
               {isHospital && (
                 <TableCell>
