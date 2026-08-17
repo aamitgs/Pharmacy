@@ -793,6 +793,55 @@ the resulting batch landed at qty 12 with a blended purchase rate of
 (including its distributor/manufacturer roll-ups and CSV export) all show
 the correct ₹125 total benefit (₹100 free goods + ₹25 cash discount).
 
+### Tally XML accounting sync
+
+`Reports > Tally Export` (`src/lib/actions/tally-export.ts`) generates a
+Tally-importable XML "day book" for a date range — every completed sale,
+GRN, customer receipt, and supplier payment as a Tally voucher, ready for
+**Gateway of Tally > Import Data > Vouchers**. Chosen over Zoho Books
+(the other option confirmed with the user upfront) since it needs no API
+keys or connected account — just a file the accountant imports, matching
+how most Indian pharmacies actually already work with Tally.
+
+- **XML builder** (`src/lib/tally/xml.ts`): plain string templating with
+  its own escaping, not a dependency — Tally's voucher import schema is a
+  small, fixed structure (`ENVELOPE > BODY > IMPORTDATA > REQUESTDATA >
+  TALLYMESSAGE > VOUCHER`), the same reasoning `src/lib/csv.ts` already
+  uses for CSV rather than pulling in a library for a bounded format.
+  Handles Tally's debit/credit sign convention
+  (`ISDEEMEDPOSITIVE=Yes` + a *negative* `AMOUNT` for the debited ledger,
+  `No` + positive for credited) so every voucher's ledger entries sum to
+  exactly zero — the strongest self-check available without a real Tally
+  instance to import into.
+- **Voucher mapping**: Sales vouchers debit the customer (credit sales,
+  driven by the same `paymentMode === "credit"` this app already uses to
+  decide whether a `CustomerLedgerEntry` receivable exists) or "Cash"
+  (immediate cash/UPI/card sales — no receivable, so naming the customer
+  there would be misleading even though this app knows who bought it).
+  Purchase vouchers debit Purchase Account + Input CGST/SGST, credit the
+  supplier. Receipt/Payment vouchers move the customer/supplier ledger
+  against a Cash or Bank ledger. GST is always split CGST+SGST — this app
+  has no interstate/B2B GSTIN capture (same reason `gstr-export.ts`
+  never produces IGST), so neither does this.
+- **Deliberately a day-book sync, not a ledger-mapping system**: uses
+  conventional default ledger names (Sales Account, Purchase Account,
+  Output/Input CGST/SGST, Cash, Bank, Round Off) plus customers'/
+  suppliers' own names as party ledgers, rather than adding a
+  tenant-configurable ledger-mapping UI — Tally's own import flow prompts
+  to auto-create any ledger that doesn't already exist, which is the
+  standard first-import workflow this is designed around.
+
+**Not tested against a real Tally instance** — none was available in the
+environment this was built in, the same caveat as every other external
+integration in this app (Razorpay, Google Drive/OneDrive, WhatsApp).
+What *was* verified against the real, running app: a full round trip —
+a real GRN, a real POS cash sale, a DB-seeded credit sale (to exercise
+the customer-as-party branch), and a real supplier payment — fetched as
+XML through the actual download route, confirmed well-formed
+(`<?xml...`, matching `ENVELOPE` tags, correct voucher/ledger-name
+content), and confirmed every one of the four generated vouchers'
+ledger entries summed to exactly zero.
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,
