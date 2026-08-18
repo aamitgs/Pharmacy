@@ -1644,6 +1644,64 @@ log lines under normal traffic (not spammy); re-verified the Super-Admin
 tenant list and usage card both still render correctly after the
 `listTenantsForAdmin` fix.
 
+### Signature visual identity pass
+
+The optional item, per the phase's own working-instructions note to treat
+it as such if time is tight — done last, kept tightly scoped to the three
+things actually listed, not a redesign.
+
+- **Trust motif** (`src/components/ui/trust-seal.tsx`) — a small vault/
+  ledger-lock cue (a `LockKeyhole` icon in a subtle bordered circle, using
+  existing design tokens, no new colors) placed next to the section
+  headers on the two screens where it reinforces the message: Security
+  (two-factor authentication) and Backup (both local and cloud). Not used
+  anywhere else in the app, per the phase's explicit instruction against
+  scattering it decoratively.
+- **Micro-interaction consistency** — audited the three confirmation
+  states the phase named (sale completion, cart line removal/undo,
+  discount application) and found real drift: cart removal had an ad hoc
+  `duration: 5000` while sale completion relied on sonner's implicit
+  4000ms default, and discount application (specifically the
+  manager-PIN-approved case — the one genuinely discrete "confirmation"
+  moment in that flow, as opposed to the live-updating input most
+  discounts go through) had no confirmation at all. Added a single shared
+  `CONFIRMATION_TOAST_DURATION_MS` constant (`src/lib/motion.ts`, 4000ms,
+  matching sonner's own default made explicit) now used by all three, and
+  added the missing discount-approval toast.
+- **Receipt template polish** — found the printed receipt reused its
+  thermal (58/80mm) styling verbatim for the A4/PDF paper size option
+  too: same cramped 11px monospace font, same dashed thermal-style
+  dividers, stretched across a full page rather than laid out for it.
+  `ReceiptView` now takes an `isThermal` prop (defaulting to `true`, so
+  the offline-receipt overlay — always thermal — is unaffected): thermal
+  rendering is pixel-identical to before, while A4 gets a properly
+  formatted invoice — larger sans-serif type, solid dividers instead of
+  dashed, more generous padding, a clearer bordered total row. Also fixed
+  a latent bug this surfaced: the item table's header row and data rows
+  used mismatched column-count configs (dead code since `isThermal` was
+  previously hardcoded `true`), now unified.
+
+Verified live against a real running instance: confirmed the trust seal
+renders identically on both the Security and Backup tabs; printed a real
+invoice's receipt in both 80mm thermal and A4/PDF mode and confirmed the
+A4 version now reads as a proper formatted invoice rather than a
+stretched thermal strip, while the thermal rendering is unchanged.
+
+### Phase 11 wrap-up
+
+All five Phase 11 items are shipped: error tracking (Sentry/GlitchTip,
+tenant-tagged and PII-scrubbed), structured operational logging (pino,
+explicitly separate from AuditLog), per-tenant usage metrics in the
+Super-Admin console, APM/performance monitoring (request tracing via
+Sentry Performance, slow-query logging, and a real N+1 finding fixed in
+this phase's own new code), and the visual identity pass (trust motif,
+micro-interaction consistency, receipt polish). Full-suite verification
+(typecheck, lint, `vitest run`, `next build`) passes across the combined
+phase. This phase deliberately added no new business features — see each
+section above for what's out of scope in this pass (e.g. alerting rules
+are a dashboard-side Sentry/GlitchTip configuration step, not
+provisionable from application code without a live account).
+
 ## Scope / what's not here
 
 Everything Phases 1–5 deliberately deferred — multi-tenant signup/billing,
@@ -1679,7 +1737,16 @@ cost calculation beyond a flat per-unit GRN rate (Phase 8's scheme
 tracking blends free-scheme units into that rate, but doesn't apportion
 freight/other landed costs), and multi-state GSTIN/IGST logic beyond the
 basic intra-state assumption everywhere GST is computed (GSTR export,
-Tally sync).
+Tally sync). Error tracking, structured logging, per-tenant usage
+metrics, APM/slow-query visibility, and a scoped visual identity pass
+(trust motif, micro-interaction consistency, receipt polish) shipped in
+Phase 11 — hardening and polish only, no new business features, per that
+phase's own explicit guardrail. Still out of scope: alerting-rule
+provisioning (a Sentry/GlitchTip dashboard configuration step, not
+something application code can set up without a live account) and a
+distributed/multi-instance deployment (the storage-usage measurement and
+in-memory API rate limiter both assume this app's documented
+single-process self-hosted model, same as earlier phases' scaling notes).
 
 ## Scripts
 
