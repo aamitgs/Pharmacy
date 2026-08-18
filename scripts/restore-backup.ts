@@ -108,6 +108,8 @@ const RESTORE_ORDER = [
   "purchaseReturns",
   "refillRequests",
   "salesInvoiceItems",
+  "creditNotes",
+  "creditNoteItems",
   "stockTransferItems",
   "whatsAppLogs",
   "discounts",
@@ -151,6 +153,8 @@ const DELEGATE: Record<string, string> = {
   purchaseOrderItems: "purchaseOrderItem",
   indentItems: "indentItem",
   salesInvoiceItems: "salesInvoiceItem",
+  creditNotes: "creditNote",
+  creditNoteItems: "creditNoteItem",
   discounts: "discount",
   grnItems: "grnItem",
   purchaseReturns: "purchaseReturn",
@@ -176,6 +180,8 @@ function deleteScope(key: string, tenantId: string): Record<string, unknown> {
       return { item: { tenantId } };
     case "salesInvoiceItems":
       return { invoice: { tenantId } };
+    case "creditNoteItems":
+      return { creditNote: { tenantId } };
     case "purchaseOrderItems":
       return { purchaseOrder: { tenantId } };
     case "grnItems":

@@ -6,6 +6,7 @@ import { requireSession } from "@/lib/rbac";
 import { getBranchFilter } from "@/lib/branch-scope";
 import { shouldShowPoweredBy } from "@/lib/branding";
 import { cancellationStateFor } from "@/lib/invoice-cancellation-rules";
+import { canRaiseCreditNote, CREDIT_NOTE_ROLES } from "@/lib/credit-note";
 
 export async function getInvoiceForReceipt(id: string) {
   const session = await requireSession();
@@ -17,7 +18,11 @@ export async function getInvoiceForReceipt(id: string) {
       doctor: true,
       pharmacistSignoff: { select: { name: true } },
       items: {
-        include: { item: true, batch: true },
+        include: { item: true, batch: true, creditNoteItems: { select: { qty: true } } },
+      },
+      creditNotes: {
+        select: { id: true, creditNoteNo: true, creditNoteDate: true, total: true },
+        orderBy: { creditNoteDate: "desc" },
       },
     },
   });
@@ -40,6 +45,31 @@ export async function getInvoiceForReceipt(id: string) {
     // rules resolved server-side so the button is simply absent rather than
     // present-and-failing.
     cancellation: cancellationStateFor(invoice, session.user.role),
+    // Whether this viewer can start a customer return. Kept distinct from
+    // cancellation: a bill from last week cannot be voided but can still be
+    // credited, and that is exactly when the receipt needs to say so.
+    canRaiseCreditNote:
+      (CREDIT_NOTE_ROLES as readonly string[]).includes(session.user.role) &&
+      canRaiseCreditNote(
+        invoice,
+        invoice.items.map((i) => ({
+          invoiceItemId: i.id,
+          itemId: i.itemId,
+          batchId: i.batchId,
+          soldQty: i.qty,
+          returnedQty: i.creditNoteItems.reduce((sum, c) => sum + c.qty, 0),
+          rate: Number(i.rate),
+          taxRate: Number(i.taxRate),
+          discountAmount: Number(i.discountAmount),
+        })),
+        new Date()
+      ).allowed,
+    creditNotes: invoice.creditNotes.map((c) => ({
+      id: c.id,
+      creditNoteNo: c.creditNoteNo,
+      creditNoteDate: c.creditNoteDate,
+      total: Number(c.total),
+    })),
     subtotal: Number(invoice.subtotal),
     taxAmount: Number(invoice.taxAmount),
     discountAmount: Number(invoice.discountAmount),

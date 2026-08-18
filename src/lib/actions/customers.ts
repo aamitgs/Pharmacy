@@ -147,11 +147,12 @@ const STATEMENT_DESCRIPTIONS: Record<
   sale: (ref) => `Invoice ${ref ?? ""}`,
   payment: () => "Payment received",
   sale_reversal: (ref) => `Invoice ${ref ?? ""} cancelled`,
+  credit_note: () => "Credit note",
 };
 
 export interface CustomerStatementLine {
   date: string;
-  type: "sale" | "payment" | "sale_reversal";
+  type: CustomerLedgerEntryType;
   description: string;
   debit: number;
   credit: number;

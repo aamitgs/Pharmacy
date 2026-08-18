@@ -123,6 +123,7 @@ model Tenant {
   gstFilingReminders GstFilingReminder[]
 
   @@map("tenants")
+  creditNotes                   CreditNote[]
 }
 
 // ---------------------------------------------------------------------------
@@ -233,6 +234,7 @@ model Branch {
 
   @@index([tenantId])
   @@map("branches")
+  creditNotes            CreditNote[]
 }
 
 // ---------------------------------------------------------------------------
@@ -285,6 +287,7 @@ model Item {
   @@index([tenantId])
   @@index([tenantId, name])
   @@map("items")
+  creditNoteItems      CreditNoteItem[]
 }
 
 model Batch {
@@ -332,6 +335,7 @@ model Batch {
   @@index([wardId])
   @@index([wardId, itemId, batchNo])
   @@map("batches")
+  creditNoteItems      CreditNoteItem[]
 }
 
 // ---------------------------------------------------------------------------
@@ -535,6 +539,10 @@ enum CustomerLedgerEntryType {
   // still shows both the charge and its reversal. Deleting would leave them
   // wondering where a line they had already seen went.
   sale_reversal
+  // A credit note settled against the ledger rather than refunded in cash.
+  // Distinct from sale_reversal because the sale still stands — the customer
+  // kept part of it — and the statement should say so.
+  credit_note
 }
 
 model CustomerLedgerEntry {
@@ -799,6 +807,16 @@ model Doctor {
 // Sales
 // ---------------------------------------------------------------------------
 
+/** How the money went back to the customer on a credit note. */
+enum RefundMode {
+  cash
+  upi
+  card
+  // Nothing leaves the till — the credit reduces what a credit customer
+  // owes. Only available when the invoice has a customer attached.
+  ledger_adjustment
+}
+
 enum PaymentMode {
   cash
   upi
@@ -883,6 +901,7 @@ model SalesInvoice {
   insuranceClaim          InsuranceClaim?
   refillRequests          RefillRequest[]
   feedback                CustomerFeedback?
+  creditNotes             CreditNote[]
 
   @@unique([tenantId, invoiceNo])
   @@index([tenantId, invoiceDate])
@@ -974,10 +993,88 @@ model SalesInvoiceItem {
   batch     Batch        @relation(fields: [batchId], references: [id])
   discounts Discount[]
 
+  creditNoteItems CreditNoteItem[]
+
   @@index([invoiceId])
   @@index([itemId])
   @@index([batchId])
   @@map("sales_invoice_items")
+}
+
+/// A GST credit note against a sales invoice — the instrument for a customer
+/// return, and the only correct way to reduce an already-issued tax invoice
+/// once same-day cancellation is no longer available (see
+/// src/lib/actions/invoice-cancellation.ts).
+///
+/// Partial by design: a customer returning two strips out of five gets a
+/// credit note for two, and the original invoice stands for the rest. Several
+/// credit notes can accumulate against one invoice, bounded by what was sold.
+model CreditNote {
+  id             String     @id @default(cuid())
+  tenantId       String
+  branchId       String
+  invoiceId      String
+  // Its own series, independent of the invoice series — GST treats a credit
+  // note as a document in its own right, and an auditor expects it to be
+  // consecutively numbered on its own.
+  creditNoteNo   String
+  creditNoteDate DateTime   @default(now())
+  reason         String
+  // Whether the returned goods went back into sellable stock. False writes
+  // the units off: a returned medicine is not automatically fit to dispense
+  // again, and quietly restocking a damaged strip is a patient-safety
+  // problem, not just a counting error.
+  restocked      Boolean
+  subtotal       Decimal    @db.Decimal(12, 2)
+  taxAmount      Decimal    @db.Decimal(12, 2)
+  total          Decimal    @db.Decimal(12, 2)
+  refundMode     RefundMode
+  createdByUserId String
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch       @relation(fields: [branchId], references: [id])
+  invoice   SalesInvoice @relation(fields: [invoiceId], references: [id])
+  createdBy User         @relation("CreditNoteCreatedBy", fields: [createdByUserId], references: [id])
+
+  items CreditNoteItem[]
+
+  @@unique([tenantId, creditNoteNo])
+  @@index([tenantId])
+  @@index([tenantId, creditNoteDate])
+  @@index([invoiceId])
+  @@index([branchId])
+  @@map("credit_notes")
+}
+
+model CreditNoteItem {
+  id            String  @id @default(cuid())
+  creditNoteId  String
+  // Which invoice line this credits, not just which item — the same item can
+  // appear twice on a bill from two batches at different rates, and the
+  // credit has to follow the line that was actually sold.
+  invoiceItemId String
+  itemId        String
+  batchId       String
+  qty           Int
+  rate          Decimal @db.Decimal(10, 2)
+  taxRate       Decimal @db.Decimal(5, 2)
+  // The share of the original line's discount being credited back, pro-rated
+  // by returned quantity. Crediting rate x qty without it would refund more
+  // than the customer paid.
+  discountAmount Decimal @db.Decimal(10, 2)
+  taxableValue   Decimal @db.Decimal(12, 2)
+  taxAmount      Decimal @db.Decimal(12, 2)
+
+  creditNote  CreditNote       @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+  invoiceItem SalesInvoiceItem @relation(fields: [invoiceItemId], references: [id])
+  item        Item             @relation(fields: [itemId], references: [id])
+  batch       Batch            @relation(fields: [batchId], references: [id])
+
+  @@index([creditNoteId])
+  @@index([invoiceItemId])
+  @@map("credit_note_items")
 }
 
 enum DiscountType {
@@ -1098,6 +1195,7 @@ model User {
 
   salesInvoicesSignedOff   SalesInvoice[]          @relation("SalesInvoicePharmacistSignoff")
   salesInvoicesCancelled   SalesInvoice[]          @relation("SalesInvoiceCancelledBy")
+  creditNotesCreated       CreditNote[]            @relation("CreditNoteCreatedBy")
   narcoticEntriesDispensed NarcoticRegisterEntry[] @relation("NarcoticEntryDispensedBy")
 
   stockTransfersRequested StockTransfer[] @relation("StockTransferRequestedBy")

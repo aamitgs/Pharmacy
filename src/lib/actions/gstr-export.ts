@@ -61,19 +61,46 @@ export async function getGstr1B2cs(from: string, to: string): Promise<Gstr1B2csR
     },
   });
 
-  const groups = new Map<string, Gstr1B2csRow>();
-  for (const line of lines) {
-    const placeOfSupply = placeOfSupplyFromGstin(line.invoice.branch.gstin) || "Unknown";
-    const taxRate = Number(line.taxRate);
-    const taxableValue = line.qty * Number(line.rate) - Number(line.discountAmount);
-    const key = `${placeOfSupply}|${taxRate}`;
+  // Credit notes to unregistered persons are not filed as separate CDNUR
+  // rows for intra-state B2C small supplies — GSTR-1 expects B2CS to be
+  // reported net of them. Subtracting here rather than adding a section is
+  // what makes the filed figure match the money actually taken.
+  const creditLines = await prisma.creditNoteItem.findMany({
+    where: {
+      creditNote: {
+        tenantId: session.user.tenantId,
+        ...branchFilter,
+        creditNoteDate: { gte: fromDate, lte: toDate },
+      },
+    },
+    select: {
+      taxRate: true,
+      taxableValue: true,
+      creditNote: { select: { branch: { select: { gstin: true } } } },
+    },
+  });
 
+  const groups = new Map<string, Gstr1B2csRow>();
+  const add = (gstin: string | null, taxRate: number, taxableValue: number) => {
+    const placeOfSupply = placeOfSupplyFromGstin(gstin) || "Unknown";
+    const key = `${placeOfSupply}|${taxRate}`;
     const existing = groups.get(key);
     if (existing) {
       existing.taxableValue += taxableValue;
     } else {
       groups.set(key, { type: "OE", placeOfSupply, taxRate, taxableValue, cessAmount: 0 });
     }
+  };
+
+  for (const line of lines) {
+    add(
+      line.invoice.branch.gstin,
+      Number(line.taxRate),
+      line.qty * Number(line.rate) - Number(line.discountAmount)
+    );
+  }
+  for (const credit of creditLines) {
+    add(credit.creditNote.branch.gstin, Number(credit.taxRate), -Number(credit.taxableValue));
   }
 
   return Array.from(groups.values())
@@ -117,19 +144,42 @@ export async function getGstr1HsnSummary(from: string, to: string): Promise<Gstr
     },
   });
 
+  // Returned units and their tax come back out of the HSN summary, so the
+  // quantities and values here describe net supplies for the period rather
+  // than everything that ever crossed the counter.
+  const creditLines = await prisma.creditNoteItem.findMany({
+    where: {
+      creditNote: {
+        tenantId: session.user.tenantId,
+        ...branchFilter,
+        creditNoteDate: { gte: fromDate, lte: toDate },
+      },
+    },
+    select: {
+      qty: true,
+      taxRate: true,
+      taxableValue: true,
+      taxAmount: true,
+      item: { select: { hsnCode: true, name: true, unit: true } },
+    },
+  });
+
   const groups = new Map<string, Gstr1HsnRow>();
-  for (const line of lines) {
-    const hsnCode = line.item.hsnCode || "—";
-    const taxRate = Number(line.taxRate);
-    const taxableValue = line.qty * Number(line.rate) - Number(line.discountAmount);
-    const taxAmount = (taxableValue * taxRate) / 100;
+  const accumulate = (
+    item: { hsnCode: string | null; name: string; unit: string },
+    taxRate: number,
+    qty: number,
+    taxableValue: number,
+    taxAmount: number
+  ) => {
+    const hsnCode = item.hsnCode || "—";
     const cgstAmount = taxAmount / 2;
     const sgstAmount = taxAmount - cgstAmount;
     const key = `${hsnCode}|${taxRate}`;
 
     const existing = groups.get(key);
     if (existing) {
-      existing.totalQuantity += line.qty;
+      existing.totalQuantity += qty;
       existing.totalValue += taxableValue + taxAmount;
       existing.taxableValue += taxableValue;
       existing.centralTaxAmount += cgstAmount;
@@ -137,9 +187,9 @@ export async function getGstr1HsnSummary(from: string, to: string): Promise<Gstr
     } else {
       groups.set(key, {
         hsnCode,
-        description: line.item.name,
-        uqc: line.item.unit.toUpperCase(),
-        totalQuantity: line.qty,
+        description: item.name,
+        uqc: item.unit.toUpperCase(),
+        totalQuantity: qty,
         totalValue: taxableValue + taxAmount,
         taxableValue,
         integratedTaxAmount: 0,
@@ -148,6 +198,23 @@ export async function getGstr1HsnSummary(from: string, to: string): Promise<Gstr
         cessAmount: 0,
       });
     }
+  };
+
+  for (const line of lines) {
+    const taxRate = Number(line.taxRate);
+    const taxableValue = line.qty * Number(line.rate) - Number(line.discountAmount);
+    accumulate(line.item, taxRate, line.qty, taxableValue, (taxableValue * taxRate) / 100);
+  }
+  for (const credit of creditLines) {
+    // The credit note's stored unit is not carried on the line, so reuse the
+    // item's — the same field the sale side reads.
+    accumulate(
+      { ...credit.item, unit: credit.item.unit },
+      Number(credit.taxRate),
+      -credit.qty,
+      -Number(credit.taxableValue),
+      -Number(credit.taxAmount)
+    );
   }
 
   return Array.from(groups.values())
@@ -188,6 +255,19 @@ export async function getGstr3bSummary(from: string, to: string): Promise<Gstr3b
     select: { qty: true, rate: true, taxRate: true, discountAmount: true },
   });
 
+  // Credit notes reduce output tax liability for the period they fall in.
+  // Leaving them out here would have the shop pay tax on money it refunded.
+  const creditLines = await prisma.creditNoteItem.findMany({
+    where: {
+      creditNote: {
+        tenantId: session.user.tenantId,
+        ...branchFilter,
+        creditNoteDate: { gte: fromDate, lte: toDate },
+      },
+    },
+    select: { taxRate: true, taxableValue: true, taxAmount: true },
+  });
+
   let taxableTotal = 0;
   let cgstTotal = 0;
   let sgstTotal = 0;
@@ -204,6 +284,18 @@ export async function getGstr3bSummary(from: string, to: string): Promise<Gstr3b
     taxableTotal += taxableValue;
     cgstTotal += taxAmount / 2;
     sgstTotal += taxAmount - taxAmount / 2;
+  }
+
+  for (const credit of creditLines) {
+    const taxableValue = Number(credit.taxableValue);
+    if (Number(credit.taxRate) === 0) {
+      nilRatedTotal -= taxableValue;
+      continue;
+    }
+    const taxAmount = Number(credit.taxAmount);
+    taxableTotal -= taxableValue;
+    cgstTotal -= taxAmount / 2;
+    sgstTotal -= taxAmount - taxAmount / 2;
   }
 
   return [

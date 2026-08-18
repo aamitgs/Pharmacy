@@ -18,6 +18,7 @@
     "customers": "Customers",
     "doctors": "Doctors",
     "invoices": "Invoices",
+    "creditNotes": "Credit Notes",
     "refillRequests": "Refill Requests",
     "insuranceClaims": "Insurance Claims",
     "insuranceProviders": "Insurance Providers",

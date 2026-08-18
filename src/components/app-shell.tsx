@@ -18,6 +18,7 @@ import {
   Users,
   Stethoscope,
   Receipt,
+  ReceiptText,
   Truck,
   ClipboardList,
   PackageCheck,
@@ -87,6 +88,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/customers", labelKey: "customers", icon: Users },
   { href: "/doctors", labelKey: "doctors", icon: Stethoscope },
   { href: "/invoices", labelKey: "invoices", icon: Receipt },
+  { href: "/credit-notes", labelKey: "creditNotes", icon: ReceiptText, roles: RETAIL_ONLY_ROLES },
   {
     href: "/refill-requests",
     labelKey: "refillRequests",

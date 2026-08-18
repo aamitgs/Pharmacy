@@ -41,6 +41,8 @@ export async function gatherTenantData(tenantId: string) {
   const doctors = await prisma.doctor.findMany({ where: { tenantId } });
   const salesInvoices = await prisma.salesInvoice.findMany({ where: { tenantId } });
   const salesInvoiceItems = await prisma.salesInvoiceItem.findMany({ where: { invoice: { tenantId } } });
+  const creditNotes = await prisma.creditNote.findMany({ where: { tenantId } });
+  const creditNoteItems = await prisma.creditNoteItem.findMany({ where: { creditNote: { tenantId } } });
   const discounts = await prisma.discount.findMany({ where: { tenantId } });
   const auditLogs = await prisma.auditLog.findMany({ where: { tenantId } });
   const backupLogs = await prisma.backupLog.findMany({ where: { tenantId } });
@@ -123,6 +125,8 @@ export async function gatherTenantData(tenantId: string) {
     doctors,
     salesInvoices,
     salesInvoiceItems,
+    creditNotes,
+    creditNoteItems,
     discounts,
     auditLogs,
     backupLogs,

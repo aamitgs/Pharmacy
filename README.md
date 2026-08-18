@@ -408,8 +408,8 @@ a way to edit a filed GST return (`src/lib/invoice-cancellation-rules.ts`):
 
 - **Same day only.** An older invoice may already sit inside a filed GSTR-1
   period, and quietly removing it changes figures that were submitted. For
-  an earlier sale the correct instrument is a credit note / sales return —
-  not built yet, and deliberately not faked by allowing a late void.
+  an earlier sale the correct instrument is a credit note — see Customer
+  returns below.
 - **Never once an e-invoice IRN exists.** The invoice is then also on the
   government IRP, which this app has no API to cancel. Voiding only our copy
   would leave a live IRN the IRP still counts.
@@ -438,6 +438,50 @@ registers, GST exports and the discount report with no change needed there.
 Concurrency: the status flip is a conditional `updateMany` on
 `status: "completed"` inside the transaction, so two managers clicking
 Cancel at once cannot both restock the same units.
+
+### Customer returns (GST credit notes)
+
+The instrument for everything same-day cancellation cannot reach. The
+original invoice stands and a separate document reduces it, which is what
+GST expects once a tax invoice has been issued.
+
+Raised from a receipt by an owner or pharmacist (`Customer return`), or
+listed under **Credit Notes**. Partial by design: a customer bringing back
+two of five strips gets a credit note for two, the invoice stands for the
+rest, and a later return can only take what the first one did not.
+
+**The money.** A returned line is credited a *proportional* share of what the
+customer actually paid — `rate x qty` minus that line's share of every
+discount it absorbed. Crediting `rate x qty` alone would refund more money
+and more output tax than was ever collected. Two partial credit notes against
+one discounted invoice add back to exactly the invoice total, to the paisa;
+`tests/credit-note.test.ts` pins that against the billing engine itself.
+
+**The stock.** Whoever raises the note says whether the goods are resalable.
+Resalable units go back to their original batch; damaged ones are written off
+— the customer is credited in full either way, but a returned medicine is not
+automatically fit to dispense again, and quietly restocking a crushed strip
+is a patient-safety problem rather than a counting error.
+
+**The GST.** Credit notes are netted out of GSTR-1 B2CS, the GSTR-1 HSN
+summary and GSTR-3B for the period they fall in — B2CS is reported net of
+credit notes to unregistered persons, and GSTR-3B's output liability drops
+accordingly, so the shop does not pay tax on money it refunded.
+
+Bounded by section 34(2) of the CGST Act: no credit note after 30 November
+following the invoice's financial year (India's FY runs April–March, so a
+January invoice's deadline is the *same* calendar year's November, which the
+naive reading gets wrong by a year).
+
+Schedule X items are refused. The narcotic register is an insert-only legal
+record whose reversal rows are one-per-entry and cannot express a partial
+return, and a returned narcotic is not resalable — the register's own
+reversal path handles those.
+
+Ledger, loyalty and concurrency behave as with cancellation: a
+`credit_note` ledger row when settled against a customer's account, lifetime
+spend and tier recomputed, and remaining quantities re-checked inside the
+transaction so two staff processing the same return cannot credit it twice.
 
 ## Multi-tenancy & go-to-market (Phase 6)
 

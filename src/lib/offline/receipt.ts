@@ -37,6 +37,9 @@ export function buildOfflineReceiptData(params: {
     cancelledAt: null,
     cancellationReason: null,
     cancellation: { allowed: false, blockedMessage: null },
+    // Same reason: no server invoice yet, so nothing to credit against.
+    canRaiseCreditNote: false,
+    creditNotes: [],
     subtotal: billing.subtotal,
     taxAmount: billing.taxAmount,
     discountAmount: billing.discountAmount,

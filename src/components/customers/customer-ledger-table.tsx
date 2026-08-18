@@ -8,6 +8,7 @@ const TYPE_LABEL: Record<PlainCustomerLedgerEntry["type"], string> = {
   sale: "Credit sale",
   payment: "Payment",
   sale_reversal: "Cancelled sale",
+  credit_note: "Credit note",
 };
 
 export function CustomerLedgerTable({ entries }: { entries: PlainCustomerLedgerEntry[] }) {
