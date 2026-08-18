@@ -397,6 +397,48 @@ Extends the Phase 1 billing flow with the supply side, without changing it:
   correctly (one of two queued sales for the same nearly-out-of-stock
   batch synced, the other flagged, stock never went negative).
 
+### Cancelling a bill
+
+An owner or pharmacist can void a completed sale from its receipt screen,
+with a typed reason. Counter staff cannot — same authority boundary as the
+discount cap.
+
+Two boundaries keep this a counter-level fix for a mis-rung bill rather than
+a way to edit a filed GST return (`src/lib/invoice-cancellation-rules.ts`):
+
+- **Same day only.** An older invoice may already sit inside a filed GSTR-1
+  period, and quietly removing it changes figures that were submitted. For
+  an earlier sale the correct instrument is a credit note / sales return —
+  not built yet, and deliberately not faked by allowing a late void.
+- **Never once an e-invoice IRN exists.** The invoice is then also on the
+  government IRP, which this app has no API to cancel. Voiding only our copy
+  would leave a live IRN the IRP still counts.
+
+The receipt screen and the server action call the same `canCancelInvoice()`,
+so the button is absent for exactly the cases the action would refuse — the
+UI is not the enforcement, just an honest preview of it.
+
+Cancelling reverses, in one transaction: batch stock (back to the *original*
+batch, not a fresh FEFO pick — expiry dates differ), the customer's
+cumulative spend and loyalty tier, a credit sale's ledger entry (as a
+negative `sale_reversal` row, so the statement shows both the charge and its
+reversal rather than a line silently vanishing), any coupon's usage count,
+and the insurance claim. A Schedule X dispense gets a **reversal row** in the
+narcotic register, never a delete — that register is insert-only by
+regulation.
+
+The invoice row is kept and marked `cancelled`, not deleted: the number
+series must have no gaps for an auditor, and a customer holding a printed
+receipt needs the number to still resolve. The printed receipt itself is
+stamped CANCELLED, since a reprint that looks identical to a live bill is
+worse than useless. Everything downstream already filters on
+`status: "completed"`, so a cancelled sale drops out of dashboards,
+registers, GST exports and the discount report with no change needed there.
+
+Concurrency: the status flip is a conditional `updateMany` on
+`status: "completed"` inside the transaction, so two managers clicking
+Cancel at once cannot both restock the same units.
+
 ## Multi-tenancy & go-to-market (Phase 6)
 
 ### Row-Level Security (real multi-tenancy, not just a column)

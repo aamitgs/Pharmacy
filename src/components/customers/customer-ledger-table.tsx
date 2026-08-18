@@ -7,6 +7,7 @@ import type { PlainCustomerLedgerEntry } from "@/lib/serialize";
 const TYPE_LABEL: Record<PlainCustomerLedgerEntry["type"], string> = {
   sale: "Credit sale",
   payment: "Payment",
+  sale_reversal: "Cancelled sale",
 };
 
 export function CustomerLedgerTable({ entries }: { entries: PlainCustomerLedgerEntry[] }) {

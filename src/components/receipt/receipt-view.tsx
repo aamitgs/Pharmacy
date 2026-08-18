@@ -53,6 +53,15 @@ export function ReceiptView({ data, isThermal = true }: { data: ReceiptData; isT
 
       <Divider isThermal={isThermal} />
 
+      {/* Printed too, not just shown on screen: a customer can be holding a
+          receipt for a bill that was voided after it came off the printer, and
+          a reprint that looks identical to a live one is worse than useless. */}
+      {data.status === "cancelled" && (
+        <div className="border border-current py-1 text-center font-bold tracking-widest uppercase">
+          Cancelled
+        </div>
+      )}
+
       <div className="flex justify-between">
         <span>{t("invoiceLabel", { no: data.invoiceNo })}</span>
         <span>{format(new Date(data.invoiceDate), "dd/MM/yyyy HH:mm")}</span>

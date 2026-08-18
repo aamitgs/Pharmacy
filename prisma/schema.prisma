@@ -530,6 +530,11 @@ model RefillReminder {
 enum CustomerLedgerEntryType {
   sale
   payment
+  // Written when a credit sale is cancelled: a negative entry that undoes the
+  // original `sale` row rather than deleting it, so the customer's statement
+  // still shows both the charge and its reversal. Deleting would leave them
+  // wondering where a line they had already seen went.
+  sale_reversal
 }
 
 model CustomerLedgerEntry {
@@ -853,6 +858,14 @@ model SalesInvoice {
   // MFA setup), not stored as an image.
   einvoiceQrData          String?
   ewayBillNo              String?
+  // Set together when a completed sale is voided. Cancellation is same-day
+  // only and refused once an e-invoice IRN exists — see cancelInvoice() in
+  // src/lib/actions/invoice-cancellation.ts for why. The invoice number is
+  // never reused: the row stays, so the series has no gaps for an auditor to
+  // ask about.
+  cancelledAt             DateTime?
+  cancelledByUserId       String?
+  cancellationReason      String?
   createdAt               DateTime      @default(now())
   updatedAt               DateTime      @updatedAt
 
@@ -861,6 +874,7 @@ model SalesInvoice {
   customer          Customer? @relation(fields: [customerId], references: [id])
   doctor            Doctor?   @relation(fields: [doctorId], references: [id])
   pharmacistSignoff User?     @relation("SalesInvoicePharmacistSignoff", fields: [pharmacistSignoffUserId], references: [id])
+  cancelledBy       User?     @relation("SalesInvoiceCancelledBy", fields: [cancelledByUserId], references: [id])
 
   items                   SalesInvoiceItem[]
   discounts               Discount[]
@@ -1083,6 +1097,7 @@ model User {
   purchaseReturnsCreated PurchaseReturn[] @relation("PurchaseReturnCreatedBy")
 
   salesInvoicesSignedOff   SalesInvoice[]          @relation("SalesInvoicePharmacistSignoff")
+  salesInvoicesCancelled   SalesInvoice[]          @relation("SalesInvoiceCancelledBy")
   narcoticEntriesDispensed NarcoticRegisterEntry[] @relation("NarcoticEntryDispensedBy")
 
   stockTransfersRequested StockTransfer[] @relation("StockTransferRequestedBy")

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/rbac";
 import { getBranchFilter } from "@/lib/branch-scope";
 import { shouldShowPoweredBy } from "@/lib/branding";
+import { cancellationStateFor } from "@/lib/invoice-cancellation-rules";
 
 export async function getInvoiceForReceipt(id: string) {
   const session = await requireSession();
@@ -33,6 +34,12 @@ export async function getInvoiceForReceipt(id: string) {
     invoiceDate: invoice.invoiceDate,
     paymentMode: invoice.paymentMode,
     status: invoice.status,
+    cancelledAt: invoice.cancelledAt,
+    cancellationReason: invoice.cancellationReason,
+    // Whether this specific viewer may void it — role and the same-day/IRN
+    // rules resolved server-side so the button is simply absent rather than
+    // present-and-failing.
+    cancellation: cancellationStateFor(invoice, session.user.role),
     subtotal: Number(invoice.subtotal),
     taxAmount: Number(invoice.taxAmount),
     discountAmount: Number(invoice.discountAmount),

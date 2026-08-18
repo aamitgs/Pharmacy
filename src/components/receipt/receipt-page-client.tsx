@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { ReceiptView } from "./receipt-view";
 import { SendWhatsAppButton } from "@/components/whatsapp/send-whatsapp-button";
 import { EinvoiceActions } from "@/components/einvoice/einvoice-actions";
+import { CancelInvoiceButton } from "./cancel-invoice-button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { sendReceiptWhatsApp } from "@/lib/actions/whatsapp";
 import type { ReceiptData } from "@/lib/actions/invoices";
-import { ChevronLeft, Printer, FileImage } from "lucide-react";
+import { ChevronLeft, Printer, FileImage, Ban } from "lucide-react";
 import { format } from "date-fns";
 
 type PaperSize = "58mm" | "80mm" | "a4";
@@ -76,8 +78,34 @@ export function ReceiptPageClient({ data }: { data: ReceiptData }) {
             ewayBillThreshold={data.ewayBillThreshold}
             hasEwayBill={!!data.ewayBillNo}
           />
+          {data.cancellation.allowed && (
+            <CancelInvoiceButton
+              invoiceId={data.id}
+              invoiceNo={data.invoiceNo}
+              total={data.total}
+              itemCount={data.items.length}
+            />
+          )}
         </div>
       </div>
+
+      {data.status === "cancelled" && (
+        <Alert variant="destructive" className="mb-4 print:hidden">
+          <Ban className="h-4 w-4" />
+          <AlertDescription>
+            This invoice was cancelled
+            {data.cancelledAt ? ` on ${format(new Date(data.cancelledAt), "dd MMM yyyy, h:mm a")}` : ""}
+            {data.cancellationReason ? ` — ${data.cancellationReason}` : ""}. The stock has been
+            put back and it no longer counts towards sales or GST.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {data.cancellation.blockedMessage && (
+        <p className="mb-4 text-center text-xs text-muted-foreground print:hidden">
+          {data.cancellation.blockedMessage}
+        </p>
+      )}
 
       {data.pharmacistSignoff && (
         <p className="mb-2 text-center text-xs text-muted-foreground print:hidden">

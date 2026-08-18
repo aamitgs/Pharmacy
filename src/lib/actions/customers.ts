@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole, requireSession } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/audit";
+import type { CustomerLedgerEntryType } from "@/generated/prisma/client";
 import {
   serializeCustomer,
   serializeCustomerLedgerEntry,
@@ -138,9 +139,19 @@ export async function recordCustomerPayment(customerId: string, input: CustomerP
   return serializeCustomerLedgerEntry(entry);
 }
 
+/** Fallback wording when a ledger entry carries no note of its own. */
+const STATEMENT_DESCRIPTIONS: Record<
+  CustomerLedgerEntryType,
+  (referenceId: string | null) => string
+> = {
+  sale: (ref) => `Invoice ${ref ?? ""}`,
+  payment: () => "Payment received",
+  sale_reversal: (ref) => `Invoice ${ref ?? ""} cancelled`,
+};
+
 export interface CustomerStatementLine {
   date: string;
-  type: "sale" | "payment";
+  type: "sale" | "payment" | "sale_reversal";
   description: string;
   debit: number;
   credit: number;
@@ -192,7 +203,7 @@ export async function getCustomerStatement(customerId: string, from: string, to:
     return {
       date: e.createdAt.toISOString(),
       type: e.type,
-      description: e.note || (e.type === "sale" ? `Invoice ${e.referenceId ?? ""}` : "Payment received"),
+      description: e.note || STATEMENT_DESCRIPTIONS[e.type](e.referenceId),
       debit: amount > 0 ? amount : 0,
       credit: amount < 0 ? -amount : 0,
       balance: running,

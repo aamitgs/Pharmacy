@@ -31,6 +31,12 @@ export function buildOfflineReceiptData(params: {
     invoiceDate: new Date(),
     paymentMode: params.paymentMode,
     status: "completed" as const,
+    // An offline sale has no server invoice yet, so there is nothing to
+    // cancel — it is still sitting in the local queue, and clearing it is the
+    // queue's own concern, not a void of a tax invoice that does not exist.
+    cancelledAt: null,
+    cancellationReason: null,
+    cancellation: { allowed: false, blockedMessage: null },
     subtotal: billing.subtotal,
     taxAmount: billing.taxAmount,
     discountAmount: billing.discountAmount,
