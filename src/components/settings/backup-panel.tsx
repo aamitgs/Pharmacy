@@ -10,6 +10,7 @@ import { createManualBackup } from "@/lib/actions/backup";
 import { getCloudBackupConnectUrl, disconnectCloudBackup, runCloudBackupNow } from "@/lib/actions/cloud-backup";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, CloudUpload, DownloadCloud, Loader2, Unlink } from "lucide-react";
+import { TrustSeal } from "@/components/ui/trust-seal";
 import type { CloudBackupProvider } from "@/generated/prisma/client";
 
 function base64ToBlob(base64: string): Blob {
@@ -176,7 +177,10 @@ export function BackupPanel({
   return (
     <div className="max-w-2xl space-y-4">
       <div>
-        <h2 className="text-sm font-medium">Local backup</h2>
+        <h2 className="flex items-center gap-2 text-sm font-medium">
+          <TrustSeal />
+          Local backup
+        </h2>
         <p className="text-sm text-muted-foreground">
           Exports items, batches, invoices, customers, and doctors as an AES-256 encrypted file
           that downloads to this device. Keep the file and your <code>BACKUP_ENCRYPTION_KEY</code>{" "}
@@ -226,7 +230,10 @@ export function BackupPanel({
       {cloudBackupInfo && (
         <div className="space-y-2 border-t pt-4">
           <div>
-            <h2 className="text-sm font-medium">Cloud backup</h2>
+            <h2 className="flex items-center gap-2 text-sm font-medium">
+              <TrustSeal />
+              Cloud backup
+            </h2>
             <p className="text-sm text-muted-foreground">
               Connect Google Drive and/or OneDrive to also send encrypted backups off-device.
               Files are encrypted the same way as the local backup before upload — the cloud

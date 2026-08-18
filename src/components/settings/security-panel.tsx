@@ -1,12 +1,16 @@
 "use client";
 
 import { MfaSetupForm } from "@/components/mfa-setup-form";
+import { TrustSeal } from "@/components/ui/trust-seal";
 
 export function SecurityPanel({ totpEnabled }: { totpEnabled: boolean }) {
   return (
     <div className="max-w-md space-y-4">
       <div>
-        <h2 className="text-sm font-medium">Two-factor authentication</h2>
+        <h2 className="flex items-center gap-2 text-sm font-medium">
+          <TrustSeal />
+          Two-factor authentication
+        </h2>
         <p className="text-sm text-muted-foreground">
           Owners and pharmacists are required to enable this. It&apos;s optional for counter
           staff, but recommended.

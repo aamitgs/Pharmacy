@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { CONFIRMATION_TOAST_DURATION_MS } from "@/lib/motion";
 import type { UserRole } from "@/generated/prisma/client";
 import { useCartStore } from "@/store/cart-store";
 import { computeBilling, effectiveDiscountPercent, type BillingLineInput, type StackedDiscountInput } from "@/lib/billing";
@@ -422,8 +423,10 @@ export function PosScreen({
     const pending = pinDialog.pending;
     if (pending?.kind === "line") {
       store.setLineDiscount(pending.lineId, pending.percent);
+      toast.success(`Discount approved — ${pending.percent}%`, { duration: CONFIRMATION_TOAST_DURATION_MS });
     } else if (pending?.kind === "bill") {
       store.setBillDiscount({ isPercent: pending.isPercent, value: pending.value });
+      toast.success("Bill discount approved", { duration: CONFIRMATION_TOAST_DURATION_MS });
     }
     setPinDialog({ open: false, pending: null, error: null, forFinalSubmit: false });
   }
@@ -434,7 +437,7 @@ export function PosScreen({
     if (line) {
       toast(`Removed ${line.itemName}`, {
         action: { label: "Undo", onClick: () => store.undoRemove() },
-        duration: 5000,
+        duration: CONFIRMATION_TOAST_DURATION_MS,
       });
     }
   }
@@ -507,14 +510,14 @@ export function PosScreen({
           header: receiptHeader,
         });
 
-        toast.success("Saved offline — will sync when back online");
+        toast.success("Saved offline — will sync when back online", { duration: CONFIRMATION_TOAST_DURATION_MS });
         store.reset();
         setOfflineReceipt(receiptData);
         return;
       }
 
       const result = await completeSale(payload);
-      toast.success(`Sale completed — ${result.invoiceNo}`);
+      toast.success(`Sale completed — ${result.invoiceNo}`, { duration: CONFIRMATION_TOAST_DURATION_MS });
       store.reset();
       pinVerifiedRef.current = false;
       managerPinRef.current = undefined;

@@ -90,7 +90,7 @@ export function ReceiptPageClient({ data }: { data: ReceiptData }) {
         className="mx-auto border shadow-sm print:border-0 print:shadow-none"
         style={{ width: config.width }}
       >
-        <ReceiptView data={data} />
+        <ReceiptView data={data} isThermal={paperSize !== "a4"} />
       </div>
     </div>
   );

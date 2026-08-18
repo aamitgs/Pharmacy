@@ -3,6 +3,7 @@
 import { format } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
 import { formatCurrency } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { AppLocale } from "@/i18n/locales";
 import type { ReceiptData } from "@/lib/actions/invoices";
 
@@ -14,8 +15,7 @@ const PAYMENT_LABEL_KEYS: Record<string, string> = {
   insurance: "paymentInsurance",
 };
 
-export function ReceiptView({ data }: { data: ReceiptData }) {
-  const isThermal = true;
+export function ReceiptView({ data, isThermal = true }: { data: ReceiptData; isThermal?: boolean }) {
   const t = useTranslations("receipt");
   const locale = useLocale() as AppLocale;
   const paymentLabel = PAYMENT_LABEL_KEYS[data.paymentMode] ? t(PAYMENT_LABEL_KEYS[data.paymentMode]) : data.paymentMode;
@@ -23,14 +23,23 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
   return (
     <div
       id="receipt-content"
-      className="mx-auto w-full bg-white p-4 font-mono text-[11px] leading-snug text-black print:p-2"
+      className={cn(
+        "mx-auto w-full bg-white text-black",
+        isThermal
+          ? "p-4 font-mono text-[11px] leading-snug print:p-2"
+          : "p-10 font-sans text-[13px] leading-normal print:p-8"
+      )}
     >
       <div className="text-center">
         {data.tenant.logoUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={data.tenant.logoUrl} alt="" className="mx-auto mb-1 h-10 max-w-[60%] object-contain" />
+          <img
+            src={data.tenant.logoUrl}
+            alt=""
+            className={cn("mx-auto mb-1 max-w-[60%] object-contain", isThermal ? "h-10" : "h-14")}
+          />
         )}
-        <div className="text-sm font-bold">{data.tenant.pharmacyName}</div>
+        <div className={cn("font-bold", isThermal ? "text-sm" : "text-lg")}>{data.tenant.pharmacyName}</div>
         <div className="text-[10px]">{data.branch.name}</div>
         <div className="text-[10px]">{data.branch.licensedAddress}</div>
         {data.branch.gstin && <div className="text-[10px]">{t("gstin", { value: data.branch.gstin })}</div>}
@@ -42,7 +51,7 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
         )}
       </div>
 
-      <Divider />
+      <Divider isThermal={isThermal} />
 
       <div className="flex justify-between">
         <span>{t("invoiceLabel", { no: data.invoiceNo })}</span>
@@ -51,10 +60,10 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
       {data.customer && <div>{t("customer", { name: data.customer.name })}</div>}
       <div>{t("payment", { mode: paymentLabel })}</div>
 
-      <Divider />
+      <Divider isThermal={isThermal} />
 
       <div className="space-y-1">
-        <Row cols={isThermal ? [5, 1.5, 1.5, 2] : [4, 1.5, 1.5, 1.5, 2]}>
+        <Row cols={[5, 1.5, 1.5, 2]}>
           <span>{t("item")}</span>
           <span className="text-right">{t("qty")}</span>
           <span className="text-right">{t("rate")}</span>
@@ -66,7 +75,7 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
               {line.itemName}
               {line.manufacturer ? ` (${line.manufacturer})` : ""}
             </div>
-            <div className="flex justify-between text-[10px] text-neutral-600">
+            <div className={cn("flex justify-between text-neutral-600", isThermal ? "text-[10px]" : "text-[11px]")}>
               <span>
                 {t("batch", { no: line.batchNo })}
                 {line.hsnCode ? ` · ${t("hsn", { value: line.hsnCode })}` : ""}
@@ -77,7 +86,12 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
               <span>{t("gst", { rate: line.taxRate })}</span>
             </div>
             {(line.cgstAmount > 0 || line.sgstAmount > 0) && (
-              <div className="flex justify-end gap-3 text-[10px] text-neutral-600">
+              <div
+                className={cn(
+                  "flex justify-end gap-3 text-neutral-600",
+                  isThermal ? "text-[10px]" : "text-[11px]"
+                )}
+              >
                 <span>{t("cgstAmount", { amount: line.cgstAmount.toFixed(2) })}</span>
                 <span>{t("sgstAmount", { amount: line.sgstAmount.toFixed(2) })}</span>
               </div>
@@ -94,7 +108,7 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
         ))}
       </div>
 
-      <Divider />
+      <Divider isThermal={isThermal} />
 
       <div className="space-y-0.5">
         <div className="flex justify-between">
@@ -113,7 +127,12 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
           <span>{t("sgst")}</span>
           <span className="tabular-nums">{formatCurrency(data.taxAmount - data.taxAmount / 2, locale)}</span>
         </div>
-        <div className="flex justify-between text-sm font-bold">
+        <div
+          className={cn(
+            "flex justify-between font-bold",
+            isThermal ? "text-sm" : "mt-1 border-t border-black/15 pt-1.5 text-base"
+          )}
+        >
           <span>{t("total")}</span>
           <span className="tabular-nums">{formatCurrency(data.total, locale)}</span>
         </div>
@@ -121,7 +140,7 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
 
       {(data.doctor || data.patientName) && (
         <>
-          <Divider />
+          <Divider isThermal={isThermal} />
           <div className="text-[10px]">
             {data.doctor && (
               <div>
@@ -152,7 +171,7 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
 
       {data.einvoiceIrn && (
         <>
-          <Divider />
+          <Divider isThermal={isThermal} />
           <div className="text-center">
             {data.einvoiceQrImageDataUrl && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -173,7 +192,7 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
 
       {data.tenant.invoiceFooterText && (
         <>
-          <Divider />
+          <Divider isThermal={isThermal} />
           <div className="text-center text-[10px]">{data.tenant.invoiceFooterText}</div>
         </>
       )}
@@ -185,8 +204,15 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
   );
 }
 
-function Divider() {
-  return <div className="my-1.5 border-t border-dashed border-black/40" />;
+function Divider({ isThermal }: { isThermal: boolean }) {
+  return (
+    <div
+      className={cn(
+        "my-1.5",
+        isThermal ? "border-t border-dashed border-black/40" : "my-3 border-t border-black/15"
+      )}
+    />
+  );
 }
 
 function Row({ children, cols }: { children: React.ReactNode; cols: number[] }) {
