@@ -350,44 +350,84 @@ describe("regression: a real sale that was verified end to end", () => {
   });
 });
 
-describe("KNOWN DEFECT: bill-discount apportionment loses paise", () => {
+describe("regression: bill-discount apportionment must not lose paise", () => {
   /**
-   * `billDiscountShare` is rounded independently per line, so the shares do
-   * not always sum back to the `billDiscountAmount` printed on the invoice.
-   * The invoice then fails to reconcile: subtotal - discount !== taxable,
-   * and GST is charged on the drifted taxable value.
-   *
-   *   3 lines x 100.00, flat 10.00 bill discount
-   *   -> shares 3.33 + 3.33 + 3.33 = 9.99, but discountAmount prints 10.00
-   *   -> taxable 290.01 where 300.00 - 10.00 = 290.00
-   *
-   * Drift grows with line count (about 0.11 across 23 lines in probing).
-   * Reported in the audit rather than fixed here, because the audit brief
-   * requires confirmation before changing billing math. The standard fix is
-   * largest-remainder allocation: give the leftover paise to one line so the
-   * shares sum exactly to the discount.
-   *
-   * `it.fails` asserts the invariant is CURRENTLY violated, so this stays
-   * green today and turns red the moment the bug is fixed — at which point
-   * this block should become a normal `it`.
+   * Each line's share used to be rounded independently, so the shares did
+   * not sum back to the discount printed on the invoice: three 100.00 lines
+   * sharing a flat 10.00 discount produced 3.33 x3 = 9.99 against a printed
+   * 10.00, leaving taxable at 290.01 where 300.00 - 10.00 = 290.00, with GST
+   * then charged on the drifted value. The gap grew with line count (~0.11
+   * across 23 lines). Fixed with largest-remainder allocation in
+   * `apportion()`.
    */
   const threeEqualLines = [1, 2, 3].map((i) => line({ lineId: `l${i}`, rate: 100 }));
 
-  it.fails("subtotal - discountAmount should equal taxableTotal (currently off by 0.01)", () => {
+  it("subtotal - discountAmount equals taxableTotal", () => {
     const r = computeBilling(threeEqualLines, [billDiscount(10)]);
     expect(r.subtotal - r.discountAmount).toBeCloseTo(r.taxableTotal, 2);
+    expect(r.taxableTotal).toBe(290);
   });
 
-  it.fails("apportioned shares should sum to the discount actually charged", () => {
+  it("apportioned shares sum to the discount actually charged", () => {
     const r = computeBilling(threeEqualLines, [billDiscount(10)]);
     const apportioned = r.lines.reduce((s, l) => s + l.billDiscountShare, 0);
     expect(apportioned).toBeCloseTo(r.billDiscountAmount, 2);
   });
 
-  it("pins the exact current numbers so the drift is visible, not just asserted", () => {
+  it("gives the leftover paisa to a line rather than dropping it", () => {
     const r = computeBilling(threeEqualLines, [billDiscount(10)]);
-    expect(r.lines.map((l) => l.billDiscountShare)).toEqual([3.33, 3.33, 3.33]);
+    // 1000 paise over 3 equal lines: 334 + 333 + 333. The odd paisa lands on
+    // the first line by the index tie-break, and the total is exact.
+    expect(r.lines.map((l) => l.billDiscountShare)).toEqual([3.34, 3.33, 3.33]);
     expect(r.billDiscountAmount).toBe(10);
-    expect(r.taxableTotal).toBe(290.01); // should be 290.00
+  });
+
+  it("stays exact as the line count grows", () => {
+    for (const n of [2, 3, 6, 7, 9, 11, 17, 23, 50]) {
+      const lines = Array.from({ length: n }, (_, i) => line({ lineId: `l${i}`, rate: 100 }));
+      const r = computeBilling(lines, [billDiscount(10)]);
+      const apportioned = r.lines.reduce((s, l) => s + l.billDiscountShare, 0);
+      expect(apportioned, `${n} lines: shares must sum to the discount`).toBeCloseTo(10, 2);
+      expect(r.subtotal - r.discountAmount, `${n} lines: bill must reconcile`).toBeCloseTo(
+        r.taxableTotal,
+        2
+      );
+    }
+  });
+
+  it("still apportions proportionally, not equally", () => {
+    // The fix must not flatten the split: a 300 line takes three times the
+    // share of a 100 line.
+    const r = computeBilling(
+      [line({ lineId: "a", rate: 100 }), line({ lineId: "b", rate: 300 })],
+      [billDiscount(10)]
+    );
+    expect(r.lines[0].billDiscountShare).toBe(2.5);
+    expect(r.lines[1].billDiscountShare).toBe(7.5);
+  });
+
+  it("assigns the whole discount to a single-line bill", () => {
+    const r = computeBilling([line({ rate: 100 })], [billDiscount(3.33)]);
+    expect(r.lines[0].billDiscountShare).toBe(3.33);
+    expect(r.taxableTotal).toBe(96.67);
+  });
+
+  it("apportions a percentage discount exactly too", () => {
+    // 7% of 300 = 21.00 across three equal lines -> 7.00 each.
+    const r = computeBilling(threeEqualLines, [billDiscount(7, true)]);
+    const apportioned = r.lines.reduce((s, l) => s + l.billDiscountShare, 0);
+    expect(apportioned).toBeCloseTo(r.billDiscountAmount, 2);
+    expect(r.taxableTotal).toBe(279);
+  });
+
+  it("apportions a stacked discount set exactly", () => {
+    const r = computeBilling(threeEqualLines, [
+      { type: "bill", isPercent: false, value: 10 },
+      { type: "loyalty", isPercent: true, value: 5 },
+      { type: "coupon", isPercent: false, value: 1 },
+    ]);
+    const apportioned = r.lines.reduce((s, l) => s + l.billDiscountShare, 0);
+    expect(apportioned).toBeCloseTo(r.billDiscountAmount, 2);
+    expect(r.subtotal - r.discountAmount).toBeCloseTo(r.taxableTotal, 2);
   });
 });

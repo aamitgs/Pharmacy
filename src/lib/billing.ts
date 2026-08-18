@@ -66,6 +66,45 @@ function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Splits `total` rupees across `weights` so that the parts sum back to
+ * `total` exactly, to the paisa.
+ *
+ * Rounding each line's share independently does not do this: three 100.00
+ * lines sharing a flat 10.00 discount each round to 3.33, summing to 9.99
+ * while the invoice prints 10.00. The bill then fails to reconcile
+ * (subtotal - discount !== taxable) and GST is charged on the drifted
+ * taxable value. The gap grows with line count.
+ *
+ * Largest-remainder allocation instead: work in whole paise, give every line
+ * its floor, then hand the leftover paise one at a time to the lines with
+ * the largest truncated fraction. Ties break on index so the result is
+ * deterministic — the client preview and the server's authoritative recompute
+ * must agree exactly.
+ */
+function apportion(total: number, weights: number[], weightTotal: number): number[] {
+  if (weights.length === 0) return [];
+
+  const totalPaise = Math.round(total * 100);
+  if (totalPaise === 0 || weightTotal <= 0) return weights.map(() => 0);
+
+  const exact = weights.map((w) => (totalPaise * w) / weightTotal);
+  const floors = exact.map((p) => Math.floor(p));
+  let leftover = totalPaise - floors.reduce((sum, p) => sum + p, 0);
+
+  // Descending by fractional part; index as a stable tie-break.
+  const order = exact
+    .map((p, i) => ({ i, frac: p - Math.floor(p) }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i);
+
+  const paise = [...floors];
+  for (let k = 0; k < order.length && leftover > 0; k++, leftover--) {
+    paise[order[k].i] += 1;
+  }
+
+  return paise.map((p) => p / 100);
+}
+
 export function computeBilling(
   lineInputs: BillingLineInput[],
   billDiscounts: StackedDiscountInput[]
@@ -99,12 +138,14 @@ export function computeBilling(
   }));
   const billDiscountAmount = round2(billDiscountBreakdown.reduce((sum, d) => sum + d.amount, 0));
 
-  const lines: BillingLineResult[] = preBillDiscount.map((l) => {
-    const share =
-      totalTaxableBeforeBillDiscount > 0
-        ? l.taxableBeforeBillDiscount / totalTaxableBeforeBillDiscount
-        : 0;
-    const billDiscountShare = round2(billDiscountAmount * share);
+  const billDiscountShares = apportion(
+    billDiscountAmount,
+    preBillDiscount.map((l) => l.taxableBeforeBillDiscount),
+    totalTaxableBeforeBillDiscount
+  );
+
+  const lines: BillingLineResult[] = preBillDiscount.map((l, i) => {
+    const billDiscountShare = billDiscountShares[i];
     const taxableValue = round2(l.taxableBeforeBillDiscount - billDiscountShare);
     const taxAmount = round2((taxableValue * l.line.taxRate) / 100);
     const cgst = round2(taxAmount / 2);
