@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { basePrisma, prisma, tenantContext } from "@/lib/prisma";
-import { encryptBackup } from "@/lib/backup-crypto";
+import { encryptBackup, serializeBackup } from "@/lib/backup-crypto";
+import { gatherTenantData } from "@/lib/backup-export";
 import { uploadBackupToProvider } from "@/lib/cloud-backup/upload";
 import { logError } from "@/lib/logger";
 import { reportError } from "@/lib/observability/report-error";
@@ -32,29 +33,12 @@ export async function POST(req: NextRequest) {
 
   for (const { id: tenantId } of tenants) {
     try {
-      const [tenant, branches, items, batches, customers, doctors, invoices] = await tenantContext.run(
-        { tenantId },
-        () =>
-          Promise.all([
-            prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } }),
-            prisma.branch.findMany({ where: { tenantId } }),
-            prisma.item.findMany({ where: { tenantId } }),
-            prisma.batch.findMany({ where: { item: { tenantId } } }),
-            prisma.customer.findMany({ where: { tenantId } }),
-            prisma.doctor.findMany({ where: { tenantId } }),
-            prisma.salesInvoice.findMany({ where: { tenantId }, include: { items: true, discounts: true } }),
-          ])
-      );
-      const json = JSON.stringify({
-        exportedAt: new Date().toISOString(),
-        tenant,
-        branches,
-        items,
-        batches,
-        customers,
-        doctors,
-        invoices,
-      });
+      // Same complete export the manual/cloud paths use. This route used to
+      // keep its own inline copy of the query list, which is how the
+      // unattended nightly backup — the one that actually matters in
+      // production — stayed incomplete on its own.
+      const data = await tenantContext.run({ tenantId }, () => gatherTenantData(tenantId));
+      const json = serializeBackup(data);
       const encrypted = encryptBackup(json);
 
       const dir = process.env.BACKUP_LOCAL_DIR || path.join(process.cwd(), "backups");

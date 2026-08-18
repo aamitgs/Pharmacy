@@ -2,35 +2,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireRole, requireSession } from "@/lib/rbac";
-import { encryptBackup } from "@/lib/backup-crypto";
-
-// Exported so cloud-backup.ts (Phase 8) can reuse the exact same export
-// shape for Google Drive/OneDrive uploads instead of duplicating it.
-export async function gatherTenantData(tenantId: string) {
-  const [tenant, branches, items, batches, customers, doctors, invoices] = await Promise.all([
-    prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } }),
-    prisma.branch.findMany({ where: { tenantId } }),
-    prisma.item.findMany({ where: { tenantId } }),
-    prisma.batch.findMany({ where: { item: { tenantId } } }),
-    prisma.customer.findMany({ where: { tenantId } }),
-    prisma.doctor.findMany({ where: { tenantId } }),
-    prisma.salesInvoice.findMany({
-      where: { tenantId },
-      include: { items: true, discounts: true },
-    }),
-  ]);
-
-  return {
-    exportedAt: new Date().toISOString(),
-    tenant,
-    branches,
-    items,
-    batches,
-    customers,
-    doctors,
-    invoices,
-  };
-}
+import { encryptBackup, serializeBackup } from "@/lib/backup-crypto";
+import { gatherTenantData } from "@/lib/backup-export";
 
 export async function createManualBackup() {
   const session = await requireRole(["owner", "pharmacist"]);
@@ -38,9 +11,7 @@ export async function createManualBackup() {
 
   try {
     const data = await gatherTenantData(tenantId);
-    const json = JSON.stringify(data, (_key, value) =>
-      typeof value === "bigint" ? value.toString() : value
-    );
+    const json = serializeBackup(data);
     const encrypted = encryptBackup(json);
 
     await prisma.backupLog.create({

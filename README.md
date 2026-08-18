@@ -122,11 +122,54 @@ decipher.setAuthTag(authTag);
 const json = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
 ```
 
-The decrypted JSON contains the tenant's branches, items, batches,
-customers, doctors, and invoices (with line items and discounts) as of the
-export time. Restoring it back into the database isn't automated in Phase
-1 — the export exists so the data is recoverable, not as a one-click
-restore flow yet.
+The decrypted JSON contains **every tenant-scoped table** — branches, staff
+accounts, items, batches, customers, doctors, the full sales and purchase
+ledgers, supplier and customer balances, the narcotic register, cold-chain
+logs, hospital-mode data, and the audit trail — as of the export time. It
+carries a `schemaVersion` so a restore can refuse a file it doesn't
+understand.
+
+> **Backups made before this change (no `schemaVersion` field) covered only
+> 7 of the 52 tables** — branches, items, batches, customers, doctors and
+> invoices — while still reporting success. They are not a usable recovery
+> point: restoring one would silently lose the purchase ledger, all staff
+> accounts, customer credit balances, the statutory narcotic register,
+> cold-chain records and the audit trail. Take a fresh backup and discard
+> the old files. `scripts/restore-backup.ts` rejects them by design.
+
+**Restoring:**
+
+```bash
+# target must already be migrated and seeded with the platform catalogs
+DATABASE_URL=postgresql://…/target npx prisma migrate deploy
+DATABASE_URL=postgresql://…/target npm run db:seed
+
+# inspect without writing anything
+npm run db:restore -- backups/pharmacy-backup-….enc --dry-run
+
+# restore (add --force to replace a tenant that already exists)
+DATABASE_URL=postgresql://…/target npm run db:restore -- backups/pharmacy-backup-….enc
+```
+
+The restore prints the target database before it writes, runs entirely in
+one transaction (either the whole tenant lands or nothing does), and
+re-points `TenantSubscription.planId` at the target's own plan with the
+same `code` — plan ids are per-install cuids, so a backup restored onto a
+freshly seeded system would otherwise fail on that foreign key.
+
+`SubscriptionPlan`, `InteractionRule` and `SuperAdmin` are deliberately not
+in the backup: they are platform-global catalogs, not tenant data, and come
+from `prisma/seed.ts`. Short-lived customer portal OTPs are skipped too.
+
+Because the file contains password hashes, TOTP secrets and API key hashes
+(without them a restored system has nobody who can log in), the encryption
+key is as sensitive as the database itself. Store `BACKUP_ENCRYPTION_KEY`
+separately from the backup files.
+
+**Rehearse it.** `tests/backup-completeness.test.ts` asserts the export
+still covers every tenant-scoped model in `schema.prisma` — including new
+ones added later — but a passing test is not a restore drill. Restore into
+a scratch database periodically and compare row counts against production.
 
 ## Security notes
 

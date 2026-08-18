@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/rbac";
-import { encryptBackup } from "@/lib/backup-crypto";
-import { gatherTenantData } from "@/lib/actions/backup";
+import { encryptBackup, serializeBackup } from "@/lib/backup-crypto";
+import { gatherTenantData } from "@/lib/backup-export";
 import { signOAuthState } from "@/lib/cloud-backup/oauth-state";
 import { buildGoogleDriveAuthUrl, isGoogleDriveConfigured } from "@/lib/cloud-backup/google-drive";
 import { buildOneDriveAuthUrl, isOneDriveConfigured } from "@/lib/cloud-backup/onedrive";
@@ -61,7 +61,7 @@ export async function runCloudBackupNow(provider: CloudBackupProvider) {
   let note: string | undefined;
   try {
     const data = await gatherTenantData(tenantId);
-    const json = JSON.stringify(data, (_key, value) => (typeof value === "bigint" ? value.toString() : value));
+    const json = serializeBackup(data);
     const encrypted = encryptBackup(json);
     const filename = `pharmacy-backup-${tenantId}-${new Date().toISOString().slice(0, 10)}.enc`;
     const result = await uploadBackupToProvider(tenantId, provider, filename, encrypted);
