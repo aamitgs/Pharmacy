@@ -212,6 +212,15 @@ a scratch database periodically and compare row counts against production.
   that set the Postgres session variables the Row-Level Security policies
   check (see Multi-tenancy below) — always with a hardcoded statement and a
   parameterized value, never string-interpolated user input.
+- **CSV injection**: every CSV export goes through `toCsv()` in
+  `src/lib/csv.ts`, which prefixes any cell starting with `= + - @` tab or CR
+  with an apostrophe so spreadsheets treat it as text rather than a formula.
+  This matters because nearly every string in a report — item, supplier and
+  customer names, batch numbers, remarks — was typed by someone other than the
+  owner who opens the file, some of it arriving through the public API or the
+  customer portal. Values that are plain numbers are deliberately exempt, so
+  negative balances stay numeric and `SUM()` keeps working. The CSV importer
+  reverses the prefix, so exporting and re-importing is lossless.
 - **Backups**: encrypted at rest (AES-256-GCM) before being written to disk
   or sent to the browser — see [Restoring a backup](#restoring-a-backup).
 - **Session idle timeout**: configurable via `SESSION_IDLE_TIMEOUT_MINUTES`

@@ -21,6 +21,7 @@ import { validateRows, type ValidationSummary } from "@/lib/import/validate";
 import { parseMargCsv } from "@/lib/import/marg-parser";
 import { parseVyaparCsv } from "@/lib/import/vyapar-parser";
 import { commitImport } from "@/lib/actions/import";
+import { stripFormulaGuard } from "@/lib/csv";
 import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
 import { toast } from "sonner";
 
@@ -68,6 +69,12 @@ export function ImportPanel() {
     Papa.parse<Record<string, string>>(file, {
       header: true,
       skipEmptyLines: true,
+      // Reverses the apostrophe our own exports add in front of a value that
+      // would otherwise read as a spreadsheet formula, so export → re-import
+      // is lossless. See stripFormulaGuard() for why this is also correct for
+      // Marg/Vyapar files, which use the same spreadsheet escape convention.
+      transform: (value) => stripFormulaGuard(value),
+      transformHeader: (header) => stripFormulaGuard(header),
       complete: (results) => {
         const cols = results.meta.fields ?? [];
         const rows = results.data;
