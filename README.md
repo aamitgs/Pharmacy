@@ -36,8 +36,12 @@ npm run dev
 ```
 
 Open http://localhost:3000. The seed script prints demo login credentials
-(owner, pharmacist, and counter-staff accounts) and the manager PIN used for
-discount-cap overrides — re-run `npm run db:seed` any time; it's idempotent.
+(owner, pharmacist, and counter-staff accounts) and each manager's own
+discount-override PIN — re-run `npm run db:seed` any time; it's idempotent.
+
+Note that `db:seed` only creates rows that are missing; it never overwrites an
+existing user. On a database seeded before per-manager override PINs existed,
+those users keep a null PIN — set one from Settings → Security.
 
 Owner and pharmacist accounts are required to set up TOTP MFA on first
 login (scan the QR code with any authenticator app). Counter staff MFA is
