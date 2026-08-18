@@ -522,6 +522,24 @@ matching this app's documented single-process self-hosted deployment (see
 Scaling readiness below); it would need a shared store (Redis etc.) behind
 a load balancer running more than one instance.
 
+**Scopes.** A key carries an explicit set of `resource:action` scopes chosen
+when it is created (`src/lib/api-scopes.ts`): `stock:read`,
+`customers:read`, `invoices:read`, `sales:write`, `wards:read`,
+`admissions:read`, `admissions:write`. Calling an endpoint outside them
+returns 403 naming the scope needed. The point is blast radius — a key lives
+in someone else's config file, so an accountant's reporting credential
+should not also be able to `POST /api/v1/sales` and move stock.
+
+`authenticateApiRequest(req, scope)` takes the scope as a **required**
+argument, so adding a route without deciding what it grants is a type error
+rather than a silently unguarded endpoint. `tests/api-scopes.test.ts` sweeps
+`src/app/api/v1` and fails if any route omits a scope, uses one outside the
+catalog, or guards a write method behind a read scope.
+
+Keys that predate scopes were backfilled with the full set by the migration,
+so integrations kept working across the deploy. Settings > API flags those as
+"Full access — reissue narrower" so an owner can replace them deliberately.
+
 `POST /api/v1/sales` is deliberately narrower than the in-app POS screen:
 FEFO batch auto-selection, no prescription items (Schedule H/H1/X sales
 still need the POS UI's pharmacist sign-off — the API rejects them

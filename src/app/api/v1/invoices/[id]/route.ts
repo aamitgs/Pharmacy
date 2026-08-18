@@ -4,7 +4,7 @@ import { apiGetInvoice } from "@/lib/api-v1";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { tenantId } = await authenticateApiRequest(req);
+    const { tenantId } = await authenticateApiRequest(req, "invoices:read");
     const { id } = await params;
     const invoice = await apiGetInvoice(tenantId, id);
     if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });

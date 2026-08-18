@@ -4,7 +4,7 @@ import { apiGetWardConsumption } from "@/lib/api-v1";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { tenantId } = await authenticateApiRequest(req);
+    const { tenantId } = await authenticateApiRequest(req, "wards:read");
     const { id } = await params;
     const limit = Math.min(Number(req.nextUrl.searchParams.get("limit") ?? 100), 500);
     const result = await apiGetWardConsumption(tenantId, id, { limit });

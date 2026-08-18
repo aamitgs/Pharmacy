@@ -4,7 +4,7 @@ import { apiListWards } from "@/lib/api-v1";
 
 export async function GET(req: NextRequest) {
   try {
-    const { tenantId } = await authenticateApiRequest(req);
+    const { tenantId } = await authenticateApiRequest(req, "wards:read");
     const wards = await apiListWards(tenantId);
     return NextResponse.json({ data: wards });
   } catch (e) {

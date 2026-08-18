@@ -1500,6 +1500,17 @@ model ApiKey {
   // First few characters of the plaintext key, kept only for the tenant to
   // recognize which key is which in a list — never enough to reconstruct it.
   keyPrefix  String
+  // What this key is allowed to do — `resource:action` strings from
+  // src/lib/api-scopes.ts. A key with an empty array can call nothing, which
+  // is the safe direction to fail: authenticateApiRequest takes the required
+  // scope as a mandatory argument, so a new route cannot forget to declare
+  // one and silently inherit full access.
+  //
+  // Keys created before scopes existed were backfilled with the full set by
+  // the migration, preserving their behaviour rather than breaking live
+  // integrations on deploy — Settings > API flags those so an owner can
+  // reissue them narrower.
+  scopes     String[] @default([])
   lastUsedAt DateTime?
   // Phase 11.3: a running total, incremented alongside lastUsedAt on every
   // authenticated request (src/lib/api-auth.ts) — the "API call volume"

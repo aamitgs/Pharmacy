@@ -4,7 +4,7 @@ import { apiGetWardStock } from "@/lib/api-v1";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { tenantId } = await authenticateApiRequest(req);
+    const { tenantId } = await authenticateApiRequest(req, "wards:read");
     const { id } = await params;
     const result = await apiGetWardStock(tenantId, id);
     if (!result) return NextResponse.json({ error: "Not found" }, { status: 404 });

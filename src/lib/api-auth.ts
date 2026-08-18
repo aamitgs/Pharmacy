@@ -2,6 +2,7 @@ import "server-only";
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { basePrisma } from "@/lib/prisma";
+import type { ApiScope } from "@/lib/api-scopes";
 
 const KEY_PREFIX = "phk_";
 
@@ -26,12 +27,22 @@ export class ApiAuthError extends Error {
 }
 
 /**
- * Resolves the calling tenant from an `Authorization: Bearer <key>` header.
+ * Resolves the calling tenant from an `Authorization: Bearer <key>` header
+ * and checks the key carries `requiredScope`.
+ *
  * Runs against the unextended base client with the bypass flag, scoped to
  * this one lookup transaction — the API key IS the tenant-context bootstrap
  * here, the same "legitimate pre-tenant-context" case as the login lookup.
+ *
+ * `requiredScope` is mandatory rather than optional-with-a-default so that
+ * adding a route without deciding what it grants is a type error, not a
+ * silently unguarded endpoint. That is the whole reason scoping is enforced
+ * here instead of in each route body.
  */
-export async function authenticateApiRequest(req: Request): Promise<{ tenantId: string; apiKeyId: string }> {
+export async function authenticateApiRequest(
+  req: Request,
+  requiredScope: ApiScope
+): Promise<{ tenantId: string; apiKeyId: string }> {
   const auth = req.headers.get("authorization");
   const key = auth?.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : null;
   if (!key) throw new ApiAuthError("Missing Authorization: Bearer <api key> header", 401);
@@ -49,6 +60,18 @@ export async function authenticateApiRequest(req: Request): Promise<{ tenantId: 
   if (apiKey.tenant.suspendedAt) throw new ApiAuthError("This account has been suspended", 403);
   if (!apiKey.tenant.subscription?.plan.publicApiAccess) {
     throw new ApiAuthError("Your plan does not include public API access — upgrade in Settings > Billing", 403);
+  }
+
+  // 403, not 404: the key is valid and the caller is entitled to know their
+  // key is simply too narrow, so they fix the key rather than chase a
+  // phantom missing endpoint. It names the scope for the same reason —
+  // withholding it hides nothing, since the scope list is public in the
+  // OpenAPI spec and in Settings.
+  if (!apiKey.scopes.includes(requiredScope)) {
+    throw new ApiAuthError(
+      `This API key does not have the "${requiredScope}" scope. Create a key with that scope in Settings > API.`,
+      403
+    );
   }
 
   checkRateLimit(apiKey.id);

@@ -8,12 +8,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Copy, ExternalLink, Loader2, Lock, Trash2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { API_SCOPES, API_SCOPE_LABELS, isWriteScope, type ApiScope } from "@/lib/api-scopes";
+import { AlertTriangle, Copy, ExternalLink, Loader2, Lock, Trash2 } from "lucide-react";
 
 interface ApiKeyRow {
   id: string;
   name: string;
   keyPrefix: string;
+  scopes: string[];
+  fullAccess: boolean;
   lastUsedAt: Date | null;
   createdAt: Date;
 }
@@ -21,6 +27,9 @@ interface ApiKeyRow {
 export function ApiPanel({ initial }: { initial: { publicApiAccess: boolean; keys: ApiKeyRow[] } }) {
   const [keys, setKeys] = useState(initial.keys);
   const [name, setName] = useState("");
+  // Starts empty on purpose — an owner picks what the key may do rather than
+  // unticking things off a full-access default.
+  const [scopes, setScopes] = useState<ApiScope[]>([]);
   const [newKey, setNewKey] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -28,13 +37,22 @@ export function ApiPanel({ initial }: { initial: { publicApiAccess: boolean; key
     if (!name.trim()) return;
     startTransition(async () => {
       try {
-        const result = await createApiKeyAction({ name });
+        const result = await createApiKeyAction({ name, scopes });
         setNewKey(result.plaintext);
         setName("");
+        setScopes([]);
         // Optimistic row — the real prefix/id come back on next page load,
         // this just avoids the list looking stale immediately after creating.
         setKeys((k) => [
-          { id: `pending-${Date.now()}`, name, keyPrefix: result.plaintext.slice(0, 10), lastUsedAt: null, createdAt: new Date() },
+          {
+            id: `pending-${Date.now()}`,
+            name,
+            keyPrefix: result.plaintext.slice(0, 10),
+            scopes,
+            fullAccess: scopes.length === API_SCOPES.length,
+            lastUsedAt: null,
+            createdAt: new Date(),
+          },
           ...k,
         ]);
         toast.success("API key created — copy it now, it won't be shown again");
@@ -71,7 +89,8 @@ export function ApiPanel({ initial }: { initial: { publicApiAccess: boolean; key
     <div className="max-w-2xl space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Read-only access to invoices, stock, and customers, plus a narrow create-sale endpoint —{" "}
+          Each key carries only the scopes you choose below, so a key that leaks can do no more
+          than the job it was issued for —{" "}
           <a href="/api/v1/openapi" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline underline-offset-2">
             OpenAPI spec <ExternalLink className="h-3 w-3" />
           </a>
@@ -99,9 +118,42 @@ export function ApiPanel({ initial }: { initial: { publicApiAccess: boolean; key
         </Alert>
       )}
 
-      <div className="flex items-center gap-2">
-        <Input placeholder="Key name, e.g. Storefront integration" value={name} onChange={(e) => setName(e.target.value)} className="max-w-xs" />
-        <Button size="sm" disabled={pending || !name.trim()} onClick={create}>
+      <div className="space-y-3 rounded-lg border p-3">
+        <Input
+          placeholder="Key name, e.g. Storefront integration"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="max-w-xs"
+        />
+        <div className="space-y-2">
+          <p className="text-xs font-medium">What may this key do?</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {API_SCOPES.map((scope) => (
+              <div key={scope} className="flex items-start gap-2">
+                <Checkbox
+                  id={`scope-${scope}`}
+                  checked={scopes.includes(scope)}
+                  disabled={pending}
+                  onCheckedChange={(checked) =>
+                    setScopes((current) =>
+                      checked ? [...current, scope] : current.filter((s) => s !== scope)
+                    )
+                  }
+                />
+                <Label htmlFor={`scope-${scope}`} className="text-xs leading-tight font-normal">
+                  {API_SCOPE_LABELS[scope]}
+                  {isWriteScope(scope) && (
+                    <Badge variant="outline" className="ml-1 text-[9px] text-warning">
+                      writes
+                    </Badge>
+                  )}
+                  <span className="block font-mono text-[10px] text-muted-foreground">{scope}</span>
+                </Label>
+              </div>
+            ))}
+          </div>
+        </div>
+        <Button size="sm" disabled={pending || !name.trim() || scopes.length === 0} onClick={create}>
           {pending && <Loader2 className="h-4 w-4 animate-spin" />}
           Generate key
         </Button>
@@ -113,6 +165,7 @@ export function ApiPanel({ initial }: { initial: { publicApiAccess: boolean; key
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Prefix</TableHead>
+              <TableHead>Scopes</TableHead>
               <TableHead>Last used</TableHead>
               <TableHead>Created</TableHead>
               <TableHead />
@@ -123,6 +176,22 @@ export function ApiPanel({ initial }: { initial: { publicApiAccess: boolean; key
               <TableRow key={k.id}>
                 <TableCell className="font-medium">{k.name}</TableCell>
                 <TableCell className="font-mono text-xs">{k.keyPrefix}…</TableCell>
+                <TableCell className="max-w-[16rem]">
+                  {k.fullAccess ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-warning">
+                      <AlertTriangle className="h-3 w-3" />
+                      Full access — reissue narrower
+                    </span>
+                  ) : (
+                    <span className="flex flex-wrap gap-1">
+                      {k.scopes.map((scope) => (
+                        <Badge key={scope} variant="secondary" className="font-mono text-[9px]">
+                          {scope}
+                        </Badge>
+                      ))}
+                    </span>
+                  )}
+                </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {k.lastUsedAt ? format(k.lastUsedAt, "dd MMM yyyy HH:mm") : "Never"}
                 </TableCell>
@@ -136,7 +205,7 @@ export function ApiPanel({ initial }: { initial: { publicApiAccess: boolean; key
             ))}
             {keys.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="h-20 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="h-20 text-center text-muted-foreground">
                   No API keys yet.
                 </TableCell>
               </TableRow>

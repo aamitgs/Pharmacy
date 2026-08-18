@@ -6,7 +6,7 @@ import { apiGetAdmissionConsumption } from "@/lib/api-v1";
  * it pushed that same ref via POST /api/v1/admissions. */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ ref: string }> }) {
   try {
-    const { tenantId } = await authenticateApiRequest(req);
+    const { tenantId } = await authenticateApiRequest(req, "admissions:read");
     const { ref } = await params;
     const result = await apiGetAdmissionConsumption(tenantId, decodeURIComponent(ref));
     if (!result) return NextResponse.json({ error: "Not found" }, { status: 404 });

@@ -15,6 +15,9 @@ const OPENAPI_SPEC = {
   servers: [{ url: "/api/v1" }],
   components: {
     securitySchemes: {
+      // Scopes are listed per operation below. A key carries only the scopes
+      // chosen when it was created, and a call outside them returns 403 —
+      // so read-only integrations cannot be repurposed to write.
       ApiKeyAuth: { type: "http", scheme: "bearer", bearerFormat: "phk_..." },
     },
     schemas: {
@@ -107,6 +110,7 @@ const OPENAPI_SPEC = {
     "/invoices": {
       get: {
         summary: "List invoices",
+        security: [{ ApiKeyAuth: ["invoices:read"] }],
         parameters: [
           { name: "limit", in: "query", schema: { type: "integer", default: 50, maximum: 200 } },
           { name: "cursor", in: "query", schema: { type: "string" } },
@@ -122,6 +126,7 @@ const OPENAPI_SPEC = {
     "/invoices/{id}": {
       get: {
         summary: "Get one invoice, with line items",
+        security: [{ ApiKeyAuth: ["invoices:read"] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "OK" },
@@ -132,6 +137,7 @@ const OPENAPI_SPEC = {
     "/stock": {
       get: {
         summary: "List items with per-batch stock levels",
+        security: [{ ApiKeyAuth: ["stock:read"] }],
         parameters: [{ name: "limit", in: "query", schema: { type: "integer", default: 100, maximum: 500 } }],
         responses: {
           "200": {
@@ -144,6 +150,7 @@ const OPENAPI_SPEC = {
     "/customers": {
       get: {
         summary: "List customers",
+        security: [{ ApiKeyAuth: ["customers:read"] }],
         parameters: [
           { name: "limit", in: "query", schema: { type: "integer", default: 50, maximum: 200 } },
           { name: "cursor", in: "query", schema: { type: "string" } },
@@ -159,6 +166,7 @@ const OPENAPI_SPEC = {
     "/sales": {
       post: {
         summary: "Create a sale (narrower than the in-app POS — no prescription items, discounts, schemes, or coupons)",
+        security: [{ ApiKeyAuth: ["sales:write"] }],
         requestBody: {
           required: true,
           content: { "application/json": { schema: { $ref: "#/components/schemas/CreateSaleRequest" } } },
@@ -173,6 +181,7 @@ const OPENAPI_SPEC = {
     "/wards": {
       get: {
         summary: "List wards (hospital-mode tenants only) — map your own ward codes to these ids",
+        security: [{ ApiKeyAuth: ["wards:read"] }],
         responses: {
           "200": {
             description: "OK",
@@ -185,6 +194,7 @@ const OPENAPI_SPEC = {
     "/wards/{id}/stock": {
       get: {
         summary: "Current stock at a ward",
+        security: [{ ApiKeyAuth: ["wards:read"] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "OK" },
@@ -196,6 +206,7 @@ const OPENAPI_SPEC = {
     "/wards/{id}/consumption": {
       get: {
         summary: "Recent IPD dispenses at a ward, across all admissions",
+        security: [{ ApiKeyAuth: ["wards:read"] }],
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" } },
           { name: "limit", in: "query", schema: { type: "integer", default: 100, maximum: 500 } },
@@ -210,6 +221,7 @@ const OPENAPI_SPEC = {
     "/admissions": {
       post: {
         summary: "Create or update a patient admission, keyed by your own admissionRef (hospital-mode tenants only)",
+        security: [{ ApiKeyAuth: ["admissions:write"] }],
         requestBody: {
           required: true,
           content: { "application/json": { schema: { $ref: "#/components/schemas/UpsertAdmissionRequest" } } },
@@ -224,6 +236,7 @@ const OPENAPI_SPEC = {
     "/admissions/{ref}": {
       get: {
         summary: "Consumption/charges for one admission (by your own admissionRef) — what an external HIS builds its bill from",
+        security: [{ ApiKeyAuth: ["admissions:read"] }],
         parameters: [{ name: "ref", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "OK" },
