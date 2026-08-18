@@ -406,13 +406,17 @@ export function PosScreen({
   }
 
   async function handlePinSubmit(pin: string) {
-    const valid = await verifyManagerPin(pin);
-    if (!valid) {
+    const result = await verifyManagerPin(pin);
+    if (!result.ok) {
       setPinDialog((d) => ({ ...d, error: "Incorrect PIN. Try again." }));
       return;
     }
     pinVerifiedRef.current = true;
     managerPinRef.current = pin;
+    // Named in the confirmation so the counter staffer can see whose approval
+    // the sale is about to record — and so a manager watching over their
+    // shoulder can catch it if it is not theirs.
+    const approver = result.approverName;
 
     if (pinDialog.forFinalSubmit) {
       setPinDialog({ open: false, pending: null, error: null, forFinalSubmit: false });
@@ -423,10 +427,10 @@ export function PosScreen({
     const pending = pinDialog.pending;
     if (pending?.kind === "line") {
       store.setLineDiscount(pending.lineId, pending.percent);
-      toast.success(`Discount approved — ${pending.percent}%`, { duration: CONFIRMATION_TOAST_DURATION_MS });
+      toast.success(`Discount approved by ${approver} — ${pending.percent}%`, { duration: CONFIRMATION_TOAST_DURATION_MS });
     } else if (pending?.kind === "bill") {
       store.setBillDiscount({ isPercent: pending.isPercent, value: pending.value });
-      toast.success("Bill discount approved", { duration: CONFIRMATION_TOAST_DURATION_MS });
+      toast.success(`Bill discount approved by ${approver}`, { duration: CONFIRMATION_TOAST_DURATION_MS });
     }
     setPinDialog({ open: false, pending: null, error: null, forFinalSubmit: false });
   }

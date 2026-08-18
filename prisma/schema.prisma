@@ -22,9 +22,11 @@ model Tenant {
   logoUrl                       String?
   primaryColor                  String?
   invoiceFooterText             String?
-  // Staff discount cap: discounts above this % require a manager PIN override.
+  // Staff discount cap: discounts above this % require a manager override.
+  // The override PIN lives on User.overridePinHash, not here — a single
+  // tenant-wide PIN could authorise a discount but never name who approved
+  // it, which is the whole point of recording an approval.
   staffDiscountCapPercent       Decimal   @default(10) @db.Decimal(5, 2)
-  managerPinHash                String?
   nearExpiryWindowDays          Int       @default(90)
   // Separate from nearExpiryWindowDays (batch stock expiry) — licence
   // renewal lead time is a different business concern with its own
@@ -992,6 +994,11 @@ model Discount {
   schemeId         String?
   couponId         String?
   appliedByUserId  String
+  // Set when this discount exceeded the staff cap and a manager entered
+  // their override PIN. `requiredOverride` records that the override
+  // happened at all — it is not implied by approvedByUserId being set,
+  // because rows written before per-user PINs existed have neither.
+  requiredOverride Boolean      @default(false)
   approvedByUserId String?
   createdAt        DateTime     @default(now())
 
@@ -1040,6 +1047,14 @@ model User {
   passwordHash String
   totpSecret   String?
   totpEnabled  Boolean  @default(false)
+  // bcrypt hash of this user's manager-override PIN — the credential a
+  // counter staffer asks for when a discount exceeds the tenant's cap.
+  // Per-user rather than tenant-wide so Discount.approvedByUserId can name
+  // a real person; set by the holder themselves in Settings, never by an
+  // owner on their behalf, since an approval nobody can repudiate is worth
+  // more than the convenience. Only roles in DISCOUNT_OVERRIDE_ROLES
+  // (src/lib/actions/pos.ts) may hold one.
+  overridePinHash String?
   // Per-user UI language (Phase 10.1) — deliberately independent of the
   // tenant's own settings, since staff on the same counter may each want
   // a different language. "en" | "hi" today; adding a language means

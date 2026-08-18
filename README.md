@@ -207,6 +207,20 @@ a scratch database periodically and compare row counts against production.
 - **Audit log**: every price edit, stock adjustment, discount override,
   item import, and sale completion writes an `AuditLog` row with
   before/after values where applicable.
+- **Discount overrides**: a counter staffer cannot discount above
+  `Tenant.staffDiscountCapPercent` without a manager's override PIN. That PIN
+  is per-manager (`User.overridePinHash`, bcrypt, 6 digits, set by the holder
+  themselves under Settings → Security — nobody can set another person's),
+  so the resulting `Discount` row names who approved it in
+  `approvedByUserId`, and a `sale.discount_override` audit entry records the
+  cap, the percentages granted, and the approver. Only the discounts that
+  actually breached the cap carry the approval; scheme, loyalty and coupon
+  discounts are system-applied and never do. Setting a PIN refuses one
+  already in use by a colleague — a shared PIN would make the recorded
+  approver a coin flip.
+
+  On a fresh deploy no manager has a PIN yet, so above-cap discounts are
+  refused until one is set. That is deliberate: it fails closed.
 - **SQL injection**: all data access goes through Prisma's parameterized
   queries. The only raw SQL in the codebase is `SELECT set_config(...)` calls
   that set the Postgres session variables the Row-Level Security policies

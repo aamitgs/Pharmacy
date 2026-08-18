@@ -18,6 +18,8 @@ export async function GET(request: NextRequest) {
     { key: (r) => r.itemName ?? "—", label: "Item" },
     { key: "type", label: "Discount type" },
     { key: "amount", label: "Amount (₹)" },
+    { key: (r) => (r.requiredOverride ? "Yes" : "No"), label: "Above cap" },
+    { key: (r) => r.approvedByName ?? "—", label: "Approved by" },
   ]);
 
   return new NextResponse(csv, {

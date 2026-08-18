@@ -46,6 +46,19 @@ export interface DiscountByScheme {
   amount: number;
 }
 
+/**
+ * Discounts that went above the staff cap and needed a manager's PIN. Kept as
+ * its own cut rather than a column on byStaff: the question an owner asks
+ * here is not "who discounts the most" but "who is authorising the ones that
+ * needed permission", and the answer usually names different people.
+ */
+export interface DiscountOverrideByApprover {
+  approverId: string;
+  approverName: string;
+  amount: number;
+  count: number;
+}
+
 export interface DiscountReport {
   total: number;
   byDay: DiscountByDay[];
@@ -53,6 +66,10 @@ export interface DiscountReport {
   byItem: DiscountByItem[];
   byType: DiscountByType[];
   byScheme: DiscountByScheme[];
+  /** Totals across every discount with requiredOverride set. */
+  overrideTotal: number;
+  overrideCount: number;
+  overridesByApprover: DiscountOverrideByApprover[];
 }
 
 export interface DiscountLine {
@@ -61,6 +78,14 @@ export interface DiscountLine {
   itemName: string | null;
   type: DiscountType;
   amount: number;
+  /** True when this discount exceeded the cap and a manager approved it. */
+  requiredOverride: boolean;
+  /**
+   * Null both when no override was needed and when the row predates per-user
+   * override PINs — those older rows have requiredOverride false, so the two
+   * cases stay distinguishable.
+   */
+  approvedByName: string | null;
 }
 
 /** Flat, unaggregated discount rows — what the CSV export offers, since a pivot elsewhere benefits more from raw rows than pre-summed tables. */
@@ -77,7 +102,9 @@ export async function getDiscountLines(from: string, to: string): Promise<Discou
     select: {
       type: true,
       amount: true,
+      requiredOverride: true,
       appliedBy: { select: { name: true } },
+      approvedBy: { select: { name: true } },
       invoice: { select: { invoiceDate: true } },
       invoiceItem: { select: { item: { select: { name: true } } } },
     },
@@ -92,6 +119,8 @@ export async function getDiscountLines(from: string, to: string): Promise<Discou
       itemName: d.invoiceItem?.item.name ?? null,
       type: d.type,
       amount: round2(Number(d.amount)),
+      requiredOverride: d.requiredOverride,
+      approvedByName: d.approvedBy?.name ?? null,
     }));
 }
 
@@ -117,7 +146,9 @@ export async function getDiscountReport(from: string, to: string): Promise<Disco
     select: {
       type: true,
       amount: true,
+      requiredOverride: true,
       appliedBy: { select: { id: true, name: true } },
+      approvedBy: { select: { id: true, name: true } },
       invoice: { select: { invoiceDate: true } },
       invoiceItem: { select: { item: { select: { id: true, name: true } } } },
       scheme: { select: { id: true, name: true } },
@@ -130,6 +161,9 @@ export async function getDiscountReport(from: string, to: string): Promise<Disco
   const byItemMap = new Map<string, DiscountByItem>();
   const byTypeMap = new Map<DiscountType, DiscountByType>();
   const bySchemeMap = new Map<string, DiscountByScheme>();
+  const byApproverMap = new Map<string, DiscountOverrideByApprover>();
+  let overrideTotal = 0;
+  let overrideCount = 0;
 
   for (const d of discounts) {
     const amount = Number(d.amount);
@@ -164,6 +198,24 @@ export async function getDiscountReport(from: string, to: string): Promise<Disco
     type.count += 1;
     byTypeMap.set(d.type, type);
 
+    if (d.requiredOverride) {
+      overrideTotal += amount;
+      overrideCount += 1;
+      // approvedBy is null only for rows written before per-user PINs; they
+      // are counted in the totals but cannot be attributed to anyone.
+      if (d.approvedBy) {
+        const approver = byApproverMap.get(d.approvedBy.id) ?? {
+          approverId: d.approvedBy.id,
+          approverName: d.approvedBy.name,
+          amount: 0,
+          count: 0,
+        };
+        approver.amount += amount;
+        approver.count += 1;
+        byApproverMap.set(d.approvedBy.id, approver);
+      }
+    }
+
     if (d.scheme) {
       const scheme = bySchemeMap.get(d.scheme.id) ?? {
         schemeId: d.scheme.id,
@@ -191,6 +243,11 @@ export async function getDiscountReport(from: string, to: string): Promise<Disco
       .sort((a, b) => b.amount - a.amount),
     byScheme: Array.from(bySchemeMap.values())
       .map((s) => ({ ...s, amount: round2(s.amount) }))
+      .sort((a, b) => b.amount - a.amount),
+    overrideTotal: round2(overrideTotal),
+    overrideCount,
+    overridesByApprover: Array.from(byApproverMap.values())
+      .map((a) => ({ ...a, amount: round2(a.amount) }))
       .sort((a, b) => b.amount - a.amount),
   };
 }

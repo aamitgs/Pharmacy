@@ -21,7 +21,6 @@ async function main() {
       portalSlug: "demo-tenant",
       invoiceFooterText: "Thank you for visiting. Medicines once sold are not returnable.",
       staffDiscountCapPercent: 10,
-      managerPinHash: await bcrypt.hash("1234", 10),
       nearExpiryWindowDays: 90,
     },
   });
@@ -50,6 +49,11 @@ async function main() {
       email: "owner@demo-pharmacy.local",
       role: "owner" as const,
       password: "Owner@12345",
+      // Distinct per manager on purpose: the whole point of the per-user
+      // override PIN is that a sale can name who approved it, and two
+      // managers sharing a PIN would defeat that (setOwnOverridePin refuses
+      // a duplicate for the same reason).
+      overridePin: "491703",
     },
     {
       id: "demo-pharmacist",
@@ -57,6 +61,7 @@ async function main() {
       email: "pharmacist@demo-pharmacy.local",
       role: "pharmacist" as const,
       password: "Pharmacist@12345",
+      overridePin: "528361",
     },
     {
       id: "demo-counter",
@@ -64,6 +69,7 @@ async function main() {
       email: "counter@demo-pharmacy.local",
       role: "counter_staff" as const,
       password: "Counter@12345",
+      overridePin: null,
     },
   ];
 
@@ -78,6 +84,7 @@ async function main() {
         email: u.email,
         role: u.role,
         passwordHash: await bcrypt.hash(u.password, 10),
+        overridePinHash: u.overridePin ? await bcrypt.hash(u.overridePin, 10) : null,
       },
     });
   }
@@ -327,7 +334,7 @@ async function main() {
   console.log("Seeded tenant:", tenant.pharmacyName, "branch:", branch.name);
   console.log("Admin console login: admin@platform.local / PlatformAdmin@12345");
   console.log("Login with owner@demo-pharmacy.local / Owner@12345");
-  console.log("Manager PIN for discount overrides: 1234");
+  console.log("Discount-override PINs — owner: 491703, pharmacist: 528361");
 }
 
 main()

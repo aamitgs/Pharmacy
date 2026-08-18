@@ -46,6 +46,9 @@ export default async function SettingsPage() {
   const isHospital = tenant.tenantType === "hospital";
 
   const canReminders = session.user.role === "owner";
+  // Mirrors DISCOUNT_OVERRIDE_ROLES in src/lib/actions/pos.ts.
+  const canHoldOverridePin =
+    session.user.role === "owner" || session.user.role === "pharmacist";
 
   const [backupStatus, cloudBackupInfo, user, licenseWindow, gstReminders, billing, branding, apiAccess, wards, staff, branches, refillReminders, feedbackSettings] = await Promise.all([
     getBackupStatus(),
@@ -104,7 +107,10 @@ export default async function SettingsPage() {
           <ExportPanel />
         </TabsContent>
         <TabsContent value="security" className="pt-4">
-          <SecurityPanel totpEnabled={user.totpEnabled} />
+          <SecurityPanel
+            totpEnabled={user.totpEnabled}
+            overridePinSet={canHoldOverridePin ? user.overridePinHash !== null : null}
+          />
         </TabsContent>
         <TabsContent value="language" className="pt-4">
           <LanguagePanel />

@@ -13,6 +13,11 @@ import {
   type BillingLineInput,
   type StackedDiscountInput,
 } from "@/lib/billing";
+import {
+  discountsNeedingOverride,
+  overrideRequired,
+  type OverrideScope,
+} from "@/lib/discount-override";
 import { serializeItem, serializeBatch } from "@/lib/serialize";
 import { resolveConcreteBranch } from "@/lib/branch-scope";
 import { applySchemes } from "@/lib/scheme-engine";
@@ -140,11 +145,59 @@ export async function getRecentPurchaseCompositions(customerId: string) {
     .map((l) => ({ name: l.item.name, composition: l.item.composition as string }));
 }
 
+/**
+ * Roles that may hold a discount-override PIN. The cap only applies to
+ * counter_staff, so these are the roles that can authorise past it. The ward
+ * roles are absent deliberately: the POS is retail-only (requireRetailSession
+ * gates it), so a ward pharmacist is never at this till.
+ */
+const DISCOUNT_OVERRIDE_ROLES: readonly UserRole[] = ["owner", "pharmacist"];
+
+/**
+ * Resolves an override PIN to the manager who owns it.
+ *
+ * Scans every override-holder in the tenant because bcrypt hashes are salted
+ * — there is no way to look a PIN up by value. That is a handful of managers
+ * in even a large pharmacy, and this runs once per sale that needs an
+ * override, not per cart line.
+ *
+ * Returns the first match. `setOwnOverridePin` refuses a PIN already in use by
+ * another holder in the same tenant, so "first" is also "only" — without that
+ * check a collision would silently attribute an approval to the wrong person,
+ * which is worse than not recording one at all.
+ */
+async function resolveOverrideApprover(
+  tenantId: string,
+  pin: string
+): Promise<{ userId: string; name: string } | null> {
+  const holders = await prisma.user.findMany({
+    where: {
+      tenantId,
+      role: { in: [...DISCOUNT_OVERRIDE_ROLES] },
+      overridePinHash: { not: null },
+    },
+    select: { id: true, name: true, overridePinHash: true },
+  });
+  for (const holder of holders) {
+    if (await bcrypt.compare(pin, holder.overridePinHash!)) {
+      return { userId: holder.id, name: holder.name };
+    }
+  }
+  return null;
+}
+
+/**
+ * Optimistic check that unlocks the override dialog at the till. completeSale
+ * re-resolves the same PIN server-side before it writes any attribution — the
+ * same belt-and-suspenders pattern as verifyPharmacistCredentials below.
+ *
+ * Returns the approver's name so the counter staffer can see whose approval
+ * is about to be recorded against the sale.
+ */
 export async function verifyManagerPin(pin: string) {
   const session = await requireRetailSession();
-  const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: session.user.tenantId } });
-  if (!tenant.managerPinHash) return false;
-  return bcrypt.compare(pin, tenant.managerPinHash);
+  const approver = await resolveOverrideApprover(session.user.tenantId, pin);
+  return approver ? { ok: true as const, approverName: approver.name } : { ok: false as const };
 }
 
 // ward_pharmacist reuses this exact permission (see rbac.ts / schema.prisma
@@ -237,24 +290,6 @@ const completeSaleSchema = z.object({
 export type CompleteSaleInput = z.infer<typeof completeSaleSchema>;
 
 
-/** Takes the tenant's discount-cap fields directly rather than a tenantId —
- * called once per cart line plus once for the bill discount, and a cart can
- * easily have a dozen lines, so the caller fetches the tenant once upfront
- * instead of this doing its own lookup on every call. */
-async function checkDiscountCap(
-  tenant: { staffDiscountCapPercent: number; managerPinHash: string | null },
-  role: string,
-  percent: number,
-  managerPin: string | undefined
-) {
-  if (role !== "counter_staff") return;
-  if (percent <= tenant.staffDiscountCapPercent) return;
-  if (!managerPin || !tenant.managerPinHash) {
-    throw new Error("MANAGER_PIN_REQUIRED");
-  }
-  const valid = await bcrypt.compare(managerPin, tenant.managerPinHash);
-  if (!valid) throw new Error("MANAGER_PIN_REQUIRED");
-}
 
 export async function completeSale(input: CompleteSaleInput) {
   const session = await requireRetailSession();
@@ -430,25 +465,31 @@ export async function completeSale(input: CompleteSaleInput) {
   // Discount-cap check, defense in depth (client already gates this).
   // Only the manual item/bill discounts are staff decisions subject to the
   // cap — scheme/loyalty/coupon discounts are system-applied, not entered
-  // by staff, so they're excluded from the PIN-override check. Tenant is
-  // fetched once here rather than once per checkDiscountCap call — a cart
-  // can easily have a dozen lines.
-  let discountCapTenant: { staffDiscountCapPercent: number; managerPinHash: string | null } | null = null;
+  // by staff, so they're excluded from the override check and never carry
+  // an approval.
+  let overrideScope: OverrideScope = { lineIndices: new Set(), bill: false };
+  let approver: { userId: string; name: string } | null = null;
+  let staffDiscountCapPercent: number | null = null;
   if (session.user.role === "counter_staff") {
     const t = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
-    discountCapTenant = { staffDiscountCapPercent: Number(t.staffDiscountCapPercent), managerPinHash: t.managerPinHash };
+    staffDiscountCapPercent = Number(t.staffDiscountCapPercent);
+    overrideScope = discountsNeedingOverride(
+      staffDiscountCapPercent,
+      session.user.role,
+      parsed.lines.map((l) => l.discountPercent),
+      effectiveDiscountPercent(parsed.billDiscount, billing.subtotal)
+    );
   }
-  if (discountCapTenant) {
-    for (let i = 0; i < parsed.lines.length; i++) {
-      await checkDiscountCap(
-        discountCapTenant,
-        session.user.role,
-        parsed.lines[i].discountPercent,
-        parsed.managerPin
-      );
-    }
-    const billDiscountPercent = effectiveDiscountPercent(parsed.billDiscount, billing.subtotal);
-    await checkDiscountCap(discountCapTenant, session.user.role, billDiscountPercent, parsed.managerPin);
+  if (overrideRequired(overrideScope)) {
+    // Resolved once per sale, not once per line: this is a bcrypt scan over
+    // the tenant's override holders.
+    approver = parsed.managerPin
+      ? await resolveOverrideApprover(tenantId, parsed.managerPin)
+      : null;
+    // Fails closed. Before per-user PINs a tenant with no PIN configured hit
+    // this same error with no way to satisfy it; now any owner or pharmacist
+    // can set their own PIN in Settings and unblock the till.
+    if (!approver) throw new Error("MANAGER_PIN_REQUIRED");
   }
 
   const now = new Date();
@@ -524,6 +565,11 @@ export async function completeSale(input: CompleteSaleInput) {
             isPercent: true,
             amount: lineBilling.itemDiscountAmount,
             appliedByUserId: session.user.id,
+            // Only the lines that actually breached the cap carry the
+            // approval — a 5% discount on line 2 was not what the manager
+            // was asked about.
+            requiredOverride: overrideScope.lineIndices.has(i),
+            approvedByUserId: overrideScope.lineIndices.has(i) ? approver!.userId : null,
           },
         });
       }
@@ -586,6 +632,8 @@ export async function completeSale(input: CompleteSaleInput) {
           isPercent: parsed.billDiscount.isPercent,
           amount: billing.billDiscounts.find((d) => d.type === "bill")?.amount ?? 0,
           appliedByUserId: session.user.id,
+          requiredOverride: overrideScope.bill,
+          approvedByUserId: overrideScope.bill ? approver!.userId : null,
         },
       });
     }
@@ -686,6 +734,31 @@ export async function completeSale(input: CompleteSaleInput) {
     entityId: result.id,
     after: { invoiceNo: result.invoiceNo, total: billing.total },
   });
+
+  // A separate row for the override, rather than a field on the sale entry:
+  // this is the event an owner reviewing discount abuse actually searches
+  // for, and it should be findable without reading every sale. userId stays
+  // the staffer who rang up the sale — the actor — with the approver named
+  // in the payload alongside what they approved.
+  if (approver) {
+    await writeAuditLog({
+      tenantId,
+      userId: session.user.id,
+      action: "sale.discount_override",
+      entity: "SalesInvoice",
+      entityId: result.id,
+      after: {
+        invoiceNo: result.invoiceNo,
+        approvedByUserId: approver.userId,
+        approvedByName: approver.name,
+        capPercent: staffDiscountCapPercent,
+        billDiscountOverridden: overrideScope.bill,
+        overriddenLinePercents: [...overrideScope.lineIndices].map(
+          (i) => parsed.lines[i].discountPercent
+        ),
+      },
+    });
+  }
 
   revalidatePath("/items");
   revalidatePath("/invoices");

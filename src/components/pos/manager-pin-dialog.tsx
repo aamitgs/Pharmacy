@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { PIN_DIGITS } from "@/lib/discount-override";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 
@@ -44,16 +45,16 @@ export function ManagerPinDialog({
         </DialogHeader>
         <div className="flex flex-col items-center gap-3 py-2">
           <InputOTP
-            maxLength={4}
+            maxLength={PIN_DIGITS}
             value={pin}
             autoFocus
             onChange={(value) => {
               setPin(value);
-              if (value.length === 4) onSubmit(value);
+              if (value.length === PIN_DIGITS) onSubmit(value);
             }}
           >
             <InputOTPGroup>
-              {Array.from({ length: 4 }).map((_, i) => (
+              {Array.from({ length: PIN_DIGITS }).map((_, i) => (
                 <InputOTPSlot key={i} index={i} />
               ))}
             </InputOTPGroup>
@@ -64,7 +65,7 @@ export function ManagerPinDialog({
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          <Button className="w-full" disabled={pin.length !== 4} onClick={() => onSubmit(pin)}>
+          <Button className="w-full" disabled={pin.length !== PIN_DIGITS} onClick={() => onSubmit(pin)}>
             Approve
           </Button>
         </div>

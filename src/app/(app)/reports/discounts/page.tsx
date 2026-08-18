@@ -31,6 +31,11 @@ export default async function DiscountReportPage({
 
   const { from, to } = defaultMonthRange(await searchParams);
   const report = await getDiscountReport(from, to);
+  // Overrides recorded before per-manager PINs existed have no approver to
+  // name. Shown as their own row rather than dropped, so the counts still
+  // reconcile against overrideCount.
+  const unattributedOverrides =
+    report.overrideCount - report.overridesByApprover.reduce((sum, a) => sum + a.count, 0);
 
   return (
     <div className="space-y-6 p-6">
@@ -40,8 +45,10 @@ export default async function DiscountReportPage({
         <div>
           <h1 className="text-lg font-semibold">Discount Report</h1>
           <p className="text-sm text-muted-foreground">
-            ₹{report.total.toFixed(2)} total discount given · {format(new Date(from), "dd MMM yyyy")} –{" "}
-            {format(new Date(to), "dd MMM yyyy")}
+            ₹{report.total.toFixed(2)} total discount given · ₹{report.overrideTotal.toFixed(2)}{" "}
+            of it above the staff cap ({report.overrideCount}{" "}
+            {report.overrideCount === 1 ? "override" : "overrides"}) ·{" "}
+            {format(new Date(from), "dd MMM yyyy")} – {format(new Date(to), "dd MMM yyyy")}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -55,6 +62,53 @@ export default async function DiscountReportPage({
       </div>
 
       <DateRangeFilter from={from} to={to} basePath="/reports/discounts" />
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold">Above-cap overrides</h2>
+        <p className="text-xs text-muted-foreground">
+          Discounts a counter staffer could not give alone — each one needed a manager&apos;s
+          PIN, and this is who gave it
+        </p>
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Approved by</TableHead>
+                <TableHead className="text-right">Overrides</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {report.overridesByApprover.length ? (
+                report.overridesByApprover.map((a) => (
+                  <TableRow key={a.approverId}>
+                    <TableCell className="font-medium">{a.approverName}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">{a.count}</TableCell>
+                    <TableCell className="text-right tabular-nums font-medium">₹{a.amount.toFixed(2)}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={3} className="h-20 text-center text-muted-foreground">
+                    No above-cap discounts in this period.
+                  </TableCell>
+                </TableRow>
+              )}
+              {unattributedOverrides > 0 && (
+                <TableRow>
+                  <TableCell className="text-muted-foreground italic">
+                    Unattributed (before per-manager PINs)
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                    {unattributedOverrides}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">—</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </section>
 
       <div className="grid grid-cols-2 gap-6">
         <section className="space-y-2">
