@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { authConfig } from "@/auth.config";
 import { basePrisma, prisma, tenantContext } from "@/lib/prisma";
 import { verifyTotpCode } from "@/lib/totp";
+import { decryptSecret } from "@/lib/secret-crypto";
 
 /**
  * Login looks a user up by email before any tenant is known — the one
@@ -68,7 +69,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           if (!totpCode) {
             throw new MfaRequiredError();
           }
-          const codeValid = verifyTotpCode(user.totpSecret, totpCode);
+          const codeValid = verifyTotpCode(decryptSecret(user.totpSecret), totpCode);
           if (!codeValid) {
             throw new InvalidTotpError();
           }

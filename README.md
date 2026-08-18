@@ -166,6 +166,12 @@ Because the file contains password hashes, TOTP secrets and API key hashes
 key is as sensitive as the database itself. Store `BACKUP_ENCRYPTION_KEY`
 separately from the backup files.
 
+Note that the same key encrypts the TOTP secrets inside the database, so a
+backup restored onto a system configured with a *different*
+`BACKUP_ENCRYPTION_KEY` will decrypt into rows whose MFA secrets it cannot
+read — those users have to re-enrol. Restore with the key the backup was
+made under.
+
 **Rehearse it.** `tests/backup-completeness.test.ts` asserts the export
 still covers every tenant-scoped model in `schema.prisma` — including new
 ones added later — but a passing test is not a restore drill. Restore into
@@ -176,8 +182,24 @@ a scratch database periodically and compare row counts against production.
 - **TLS**: assumed to be terminated at the reverse proxy / load balancer in
   front of this app (see Docker section above). No app-level TLS handling.
 - **Passwords**: hashed with bcrypt, never stored or logged in plaintext.
-- **MFA**: TOTP secrets are stored in the database, never logged. Required
-  for owner/pharmacist roles; optional for counter staff.
+- **MFA**: TOTP secrets are encrypted at rest with AES-256-GCM under
+  `BACKUP_ENCRYPTION_KEY` (`enc.v1:` prefix, see `src/lib/secret-crypto.ts`)
+  and never logged. They cannot be hashed like a password — the server has to
+  recover the original value to derive the expected code — so a stolen
+  database dump on its own does not yield working MFA secrets. Required for
+  owner/pharmacist/ward-pharmacist roles; optional for counter staff.
+
+  Upgrading an existing install: secrets written before this change are
+  plaintext base32. The app reads both forms, so nobody is locked out, but
+  run the one-shot migration to encrypt them:
+
+  ```bash
+  npm run db:encrypt-totp -- --dry-run   # list what would change
+  npm run db:encrypt-totp                # encrypt in one transaction
+  ```
+
+  It is idempotent — already-encrypted values are skipped — so a repeat run
+  reports "Nothing to do."
 - **RBAC**: enforced server-side in every mutation (`requireRole()` /
   `requireSession()` in `src/lib/rbac.ts`), not just hidden in the UI —
   a counter-staff account calling an owner-only server action directly gets
